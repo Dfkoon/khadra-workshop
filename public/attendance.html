@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>جدول الحضور - Admin</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav">
+      <a href="/">الرئيسية</a>
+      <a href="/workers.html">العمال</a>
+      <a href="/boxes.html">تسجيل العلب</a>
+      <a id="navAttendance" href="/attendance.html">الحضور</a>
+    </nav>
+  </header>
+  <main class="container">
+    <h1>تسجيل الحضور (Admin فقط) <span style="vertical-align:middle;margin-left:8px;">📋</span></h1>
+    <div class="card">
+      <label>اختر العامل</label>
+      <select id="workerSelect"></select>
+      <label>التاريخ</label>
+      <input id="shiftDate" class="field-focus" type="date" />
+      <label>وقت البدء</label>
+      <input id="shiftStart" class="field-focus" type="time" />
+      <label>وقت الانتهاء</label>
+      <input id="shiftEnd" class="field-focus" type="time" />
+      <button class="btn-primary btn" onclick="submitShift()">سجل الحضور</button>
+    </div>
+
+    <div class="card fade-in">
+      <h3>السجلات <span class="badge">جديد</span></h3>
+      <div id="shiftList" class="table-responsive"></div>
+    </div>
+  </main>
+
+<script>
+let token = localStorage.getItem('khadraToken') || '';
+if (!token) location.href = '/';
+
+// Ensure only admin can use this page: fetch role and redirect if not admin
+fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+  .then(r => r.json())
+  .then(d => {
+    const role = d.user?.role;
+    if (role !== 'admin') {
+      alert('هذه الصفحة متاحة لحساب المشرفة فقط. سيتم تحويلك إلى الصفحة الرئيسية.');
+      location.href = '/';
+    }
+  }).catch(() => { location.href = '/'; });
+
+async function loadWorkers() {
+  const res = await fetch('/api/hourly-workers', { headers: { Authorization: `Bearer ${token}` } });
+  const workers = await res.json();
+  document.getElementById('workerSelect').innerHTML = workers.map(w => `<option value="${w.id}">${w.full_name}</option>`).join('');
+}
+
+async function loadShifts() {
+  const res = await fetch('/api/shift-records', { headers: { Authorization: `Bearer ${token}` } });
+  const rows = await res.json();
+  document.getElementById('shiftList').innerHTML = '<table class="striped"><thead><tr><th>التاريخ</th><th>العامل</th><th>بداية</th><th>نهاية</th><th>ساعات</th></tr></thead><tbody>' + rows.map(r => `<tr><td>${r.shift_date}</td><td>${r.worker_name || r.worker_id}</td><td>${r.shift_start}</td><td>${r.shift_end}</td><td>${r.hours_worked}</td></tr>`).join('') + '</tbody></table>';
+}
+
+async function submitShift() {
+  const worker_id = document.getElementById('workerSelect').value;
+  const shift_date = document.getElementById('shiftDate').value || new Date().toISOString().slice(0,10);
+  const shift_start = document.getElementById('shiftStart').value;
+  const shift_end = document.getElementById('shiftEnd').value;
+  const res = await fetch('/api/shift-records', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ worker_id, shift_date, shift_start, shift_end }) });
+  if (!res.ok) { const d = await res.json(); alert(d.error || 'خطأ'); return; }
+  alert('تم تسجيل الحضور');
+  await loadShifts();
+}
+
+loadWorkers();
+loadShifts();
+</script>
+<script src="/app.js"></script>
+<a class="fab" href="/attendance.html" title="تسجيل"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></a>
+</body>
+</html>

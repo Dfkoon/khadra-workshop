@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>تسجيل علب - منسق</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav">
+      <a href="/">الرئيسية</a>
+      <a href="/workers.html">العمال</a>
+      <a id="navAttendance" href="/attendance.html">الحضور</a>
+    </nav>
+  </header>
+  <main class="container">
+    <h1>تسجيل عدد العلب للعمال</h1>
+    <div class="card">
+      <label>اختر العامل</label>
+      <select id="workerSelect"></select>
+      <label>عدد العلب</label>
+      <input id="boxesCount" class="field-focus" type="number" value="0" />
+      <label>التاريخ</label>
+      <input id="allocDate" type="date" />
+      <button class="btn-primary btn" onclick="submitBoxes()">حفظ</button>
+    </div>
+
+    <div class="card fade-in">
+      <h3>السجلات <span class="badge">العلب</span></h3>
+      <div id="allocList" class="table-responsive"></div>
+    </div>
+  </main>
+
+<script>
+let token = localStorage.getItem('khadraToken') || '';
+if (!token) location.href = '/';
+
+async function loadWorkers() {
+  const res = await fetch('/api/hourly-workers', { headers: { Authorization: `Bearer ${token}` } });
+  const workers = await res.json();
+  document.getElementById('workerSelect').innerHTML = workers.map(w => `<option value="${w.id}">${w.full_name}</option>`).join('');
+}
+
+async function loadAllocations() {
+  const res = await fetch('/api/box-allocations', { headers: { Authorization: `Bearer ${token}` } });
+  const rows = await res.json();
+  document.getElementById('allocList').innerHTML = '<table><thead><tr><th>التاريخ</th><th>العامل</th><th>العلب</th></tr></thead><tbody>' + rows.map(r => `<tr><td>${r.alloc_date}</td><td>${r.worker_name}</td><td>${r.boxes_count}</td></tr>`).join('') + '</tbody></table>';
+}
+
+async function submitBoxes() {
+  const worker_id = document.getElementById('workerSelect').value;
+  const boxes_count = document.getElementById('boxesCount').value;
+  const alloc_date = document.getElementById('allocDate').value || new Date().toISOString().slice(0,10);
+  const res = await fetch('/api/box-allocations', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ worker_id, boxes_count, alloc_date }) });
+  if (!res.ok) { const d = await res.json(); alert(d.error || 'خطأ'); return; }
+  alert('تم الحفظ');
+  await loadAllocations();
+}
+
+loadWorkers();
+loadAllocations();
+</script>
+<script src="/app.js"></script>
+<a class="fab" href="/boxes.html" title="إضافة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></a>
+</body>
+</html>

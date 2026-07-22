@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>مشغل أبو يوسف - نظام الإدارة</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="container">
+      <div class="hero">
+        <h1>مشغل أبو يوسف</h1>
+        <p>لوحة تشغيل حديثة، مناسبة للاستخدام من الهاتف أو الجهاز اللوحي مع متابعة يومية دقيقة للأصناف والدوام.</p>
+      </div>
+
+      <div class="center-stage">
+        <div class="login-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div>
+              <h2 style="margin:0 0 4px">تسجيل الدخول</h2>
+              <div class="muted">استخدم حساب المشرفة أو المضيف</div>
+            </div>
+            <div style="text-align:left;">
+              <span class="pill">نسخة تجريبية</span>
+            </div>
+          </div>
+
+          <div class="login-grid">
+            <div class="left">
+              <label for="username">اسم المستخدم</label>
+              <input id="username" placeholder="admin" />
+
+              <label for="password" style="margin-top:10px">كلمة المرور</label>
+              <input id="password" type="password" placeholder="••••••" />
+            </div>
+
+            <div>
+              <label>&nbsp;</label>
+              <button class="btn" style="width:100%;height:100%;" onclick="login()">دخول</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="messageBox" class="status hidden"></div>
+
+      <div id="appContent" class="hidden">
+        <div class="card fade-in">
+          <h2>تم تسجيل الدخول</h2>
+          <p class="muted">يمكنك الوصول للصفحات التالية:</p>
+          <ul>
+            <li><a href="/workers.html">قائمة العمال (عرض)</a></li>
+            <li><a href="/boxes.html">تسجيل العلب</a></li>
+            <li><a href="/attendance.html">تسجيل الحضور (Admin)</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+    <script>
+      let token = localStorage.getItem('khadraToken') || '';
+      const loginBtn = { el: null };
+
+      function setMessage(text, isError = false) {
+        const box = document.getElementById('messageBox');
+        box.textContent = text;
+        box.classList.remove('hidden');
+        box.style.borderColor = isError ? 'rgba(220,38,38,0.3)' : 'rgba(46,125,50,0.2)';
+        box.style.color = isError ? '#b91c1c' : '#1b5e20';
+      }
+
+      function toggleApp(show) {
+        const app = document.getElementById('appContent');
+        const login = document.getElementById('loginCard');
+        if (app) app.classList.toggle('hidden', !show);
+        if (login) login.classList.toggle('hidden', show);
+      }
+
+      async function login() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        try {
+          // disable button
+          const btn = document.querySelector('button[onclick="login()"]');
+          if (btn) { btn.disabled = true; btn.textContent = 'جاري التحقق...'; }
+          console.log('attempt login', username);
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            setMessage(data.error || 'فشل تسجيل الدخول', true);
+            if (btn) { btn.disabled = false; btn.textContent = 'دخول'; }
+            return;
+          }
+          token = data.token;
+          localStorage.setItem('khadraToken', token);
+          setMessage(`مرحبًا ${data.user.full_name}`);
+          toggleApp(true);
+          await loadData();
+        } catch (err) {
+          console.error('login error', err);
+          setMessage('خطأ في الاتصال بالخادم', true);
+        } finally {
+          const btn = document.querySelector('button[onclick="login()"]');
+          if (btn) { btn.disabled = false; btn.textContent = 'دخول'; }
+        }
+      }
+
+      async function loadData() {
+        if (!token) return;
+        const [categoriesRes, workersRes, reportRes] = await Promise.all([
+          fetch('/api/categories', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch('/api/hourly-workers', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`/api/reports/daily?date=${new Date().toISOString().slice(0, 10)}`, { headers: { Authorization: `Bearer ${token}` } })
+        ]);
+
+        const categories = await categoriesRes.json();
+        const workers = await workersRes.json();
+        const report = await reportRes.json();
+
+        document.getElementById('usageValue').textContent = `${Number(report.total_usage || 0).toFixed(2)} S.P`;
+        document.getElementById('payValue').textContent = `${Number(report.total_pay || 0).toFixed(2)} S.P`;
+        document.getElementById('statusValue').textContent = 'نشط';
+
+        const select = document.getElementById('categorySelect');
+        select.innerHTML = categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+        const workerSelect = document.getElementById('workerSelect');
+        workerSelect.innerHTML = workers.map(w => `<option value="${w.id}">${w.full_name}</option>`).join('');
+
+        const list = document.getElementById('categoriesList');
+        list.innerHTML = '<table><thead><tr><th>الصنف</th><th>السعر</th><th>الوحدة</th></tr></thead><tbody>' + categories.map(c => `<tr><td>${c.name}</td><td>${Number(c.unit_price).toFixed(2)}</td><td>${c.unit_type || '-'}</td></tr>`).join('') + '</tbody></table>';
+      }
+
+      async function createCategory() {
+        const res = await fetch('/api/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name: document.getElementById('categoryName').value, unit_price: document.getElementById('categoryPrice').value, unit_type: 'كغم' })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setMessage(data.error || 'تعذر إضافة الصنف', true);
+          return;
+        }
+        setMessage(`تمت إضافة ${data.name}`);
+        document.getElementById('categoryName').value = '';
+        document.getElementById('categoryPrice').value = '';
+        await loadData();
+      }
+
+      async function createUsage() {
+        const res = await fetch('/api/category-usage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            category_id: document.getElementById('categorySelect').value,
+            worker_name: document.getElementById('workerName').value,
+            quantity: document.getElementById('quantity').value,
+            entry_date: document.getElementById('entryDate').value || new Date().toISOString().slice(0, 10)
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setMessage(data.error || 'تعذر حفظ السجل', true);
+          return;
+        }
+        setMessage('تم حفظ سجل الاستخدام بنجاح');
+        document.getElementById('workerName').value = '';
+        document.getElementById('quantity').value = '';
+        await loadData();
+      }
+
+      async function createShift() {
+        const res = await fetch('/api/shift-records', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            worker_id: document.getElementById('workerSelect').value,
+            shift_date: document.getElementById('shiftDate').value || new Date().toISOString().slice(0, 10),
+            shift_start: document.getElementById('shiftStart').value,
+            shift_end: document.getElementById('shiftEnd').value
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setMessage(data.error || 'تعذر تسجيل الدوام', true);
+          return;
+        }
+        setMessage('تم تسجيل الدوام بنجاح');
+        await loadData();
+      }
+
+      if (token) {
+        toggleApp(true);
+        loadData();
+      }
+    </script>
+  </body>
+</html>

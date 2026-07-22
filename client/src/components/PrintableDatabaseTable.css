@@ -1,0 +1,93 @@
+.printable-table-container {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+
+.printable-table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.printable-table-header h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.printable-table-header p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.printable-table-actions button {
+  min-width: 140px;
+}
+
+.printable-table-body {
+  overflow-x: auto;
+}
+
+.printable-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 560px;
+}
+
+.printable-table th,
+.printable-table td {
+  padding: 10px 12px;
+  border: 1px solid #e4decf;
+  text-align: right;
+  font-size: 13px;
+}
+
+.printable-table th {
+  background: var(--crate);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.printable-table tbody tr:nth-child(even) {
+  background: #faf6ef;
+}
+
+.table-loading,
+.table-empty {
+  padding: 18px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .printable-table-container {
+    border: none;
+    box-shadow: none;
+    page-break-inside: avoid;
+    background: #fff;
+  }
+
+  .printable-table {
+    min-width: unset;
+    width: 100%;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  .printable-table th,
+  .printable-table td {
+    border-color: #999;
+  }
+}

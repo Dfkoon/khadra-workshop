@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>قائمة العمال</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav">
+      <a href="/">الرئيسية</a>
+      <a href="/boxes.html">تسجيل العلب</a>
+      <a id="navAttendance" href="/attendance.html">الحضور</a>
+    </nav>
+  </header>
+  <main class="container">
+    <h1>قائمة العمال (عرض فقط للمضيفين)</h1>
+    <div class="card fade-in">
+      <h3>قائمة العمال <span class="badge">عرض فقط</span></h3>
+      <div id="workersList" class="table-responsive"></div>
+    </div>
+  </main>
+
+<script>
+let token = localStorage.getItem('khadraToken') || '';
+if (!token) location.href = '/';
+
+async function loadWorkers() {
+  const res = await fetch('/api/hourly-workers', { headers: { Authorization: `Bearer ${token}` } });
+  const rows = await res.json();
+  document.getElementById('workersList').innerHTML = '<table><thead><tr><th>الاسم</th><th>سعر الساعة</th></tr></thead><tbody>' + rows.map(r => `<tr><td>${r.full_name}</td><td>${r.hourly_rate}</td></tr>`).join('') + '</tbody></table>';
+}
+
+loadWorkers();
+</script>
+<script src="/app.js"></script>
+<a class="fab" href="/workers.html" title="قائمة"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></a>
+</body>
+</html>
