@@ -186,15 +186,15 @@ function AppLayout() {
                 </div>
 
                 <Routes>
-                    <Route path="/"              element={isAdmin ? <Dashboard /> : <Navigate to="/categories" replace />} />
+                    <Route path="/"              element={isAdmin ? <Dashboard /> : <Navigate to={user?.role === 'inspection_coordinator' ? '/boxes' : '/categories'} replace />} />
                     {(isAdmin || isHost) && <Route path="/attendance"    element={<Attendance />} />}
-                    <Route path="/categories"    element={<Categories />} />
+                    <Route path="/categories"    element={user?.role === 'inspection_coordinator' ? <Navigate to="/boxes" replace /> : <Categories />} />
                     {isAdmin  && <Route path="/workers"       element={<Workers />}    />}
                     {!isHost  && <Route path="/boxes"         element={<Boxes />}      />}
                     {isAdmin  && <Route path="/sessions"      element={<Sessions />}   />}
                     {isAdmin  && <Route path="/archive"       element={<Archive />}    />}
                     {isAdmin  && <Route path="/hosts"         element={<Hosts />}      />}
-                    <Route path="*" element={<Navigate to="/" replace />} />
+                    <Route path="*" element={<Navigate to={user?.role === 'inspection_coordinator' ? '/boxes' : '/'} replace />} />
                 </Routes>
 
                 <div className="app-footer no-print">
