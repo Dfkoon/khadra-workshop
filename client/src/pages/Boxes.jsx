@@ -56,6 +56,44 @@ export default function Boxes() {
     // Admin only Target assignment state
     const [targetWorkerName, setTargetWorkerName] = useState('');
     const [targetBoxesCount, setTargetBoxesCount] = useState('');
+    const [targetMode, setTargetMode] = useState('auto'); // 'auto' or 'single'
+    const [bulkTotalBoxes, setBulkTotalBoxes] = useState('');
+    const [selectedWorkersForTarget, setSelectedWorkersForTarget] = useState([]);
+
+    function getBulkDistribution() {
+        const total = parseInt(bulkTotalBoxes);
+        if (!total || total <= 0 || selectedWorkersForTarget.length === 0) return [];
+        const count = selectedWorkersForTarget.length;
+        const base = Math.floor(total / count);
+        const remainder = total % count;
+        return selectedWorkersForTarget.map((wName, idx) => ({
+            worker_name: wName,
+            target_boxes: base + (idx < remainder ? 1 : 0)
+        }));
+    }
+
+    async function submitBulkInspectionTargets() {
+        const dist = getBulkDistribution();
+        if (dist.length === 0) {
+            toast.error('يرجى إدخال العدد الكلي واختيار عامل واحد على الأقل');
+            return;
+        }
+        try {
+            const targetDate = new Date().toISOString().slice(0, 10);
+            for (const item of dist) {
+                await api.createInspectionTarget({
+                    worker_name: item.worker_name,
+                    target_boxes: item.target_boxes,
+                    target_date: targetDate
+                });
+            }
+            toast.success(`تم توزيع وتقسيم ${bulkTotalBoxes} بكس على ${dist.length} عمال بنجاح ✨`);
+            setBulkTotalBoxes('');
+            load();
+        } catch (e) {
+            toast.error(e.message);
+        }
+    }
 
     function toggleAllowHourlyBoxes() {
         const newValue = !allowHourlyBoxes;
@@ -524,37 +562,148 @@ export default function Boxes() {
                         <>
                             {(isAdmin || user?.role === 'inspection_coordinator') && (
                                 <div className="section" style={{ borderRight: '4px solid var(--primary)' }}>
-                                    <h3>تحديد العدد المطلوب</h3>
-                                    <div className="boxes-form-grid">
-                                        <div className="field">
-                                            <label>اسم العامل</label>
-                                            <input
-                                                value={targetWorkerName}
-                                                onChange={e => setTargetWorkerName(e.target.value)}
-                                                placeholder="أدخل أو ابحث عن اسم العامل"
-                                                list="workers-list"
-                                            />
-                                            <datalist id="workers-list">
-                                                {catWorkers.map(w => (
-                                                    <option key={w.id} value={w.full_name} />
-                                                ))}
-                                            </datalist>
-                                        </div>
-                                        <div className="field">
-                                            <label>العدد المطلوب تحقيقه (بكس)</label>
-                                            <input
-                                                type="number" min="1" step="1"
-                                                value={targetBoxesCount}
-                                                onChange={e => setTargetBoxesCount(e.target.value)}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                        <div className="field btn-submit-wrapper" style={{ margin: 0 }}>
-                                            <button className="btn btn-primary" style={{ width: '100%' }} onClick={submitInspectionTarget}>
-                                                حفظ الهدف
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
+                                        <h3 style={{ margin: 0 }}>تحديد العدد المطلوب (الأهداف)</h3>
+                                        <div style={{ display: 'flex', gap: '6px', background: 'var(--surface-2)', padding: '4px', borderRadius: '10px' }}>
+                                            <button
+                                                type="button"
+                                                className={`btn ${targetMode === 'auto' ? 'btn-primary' : 'btn-ghost'}`}
+                                                style={{ padding: '6px 14px', fontSize: '13px', minHeight: '34px', borderRadius: '8px' }}
+                                                onClick={() => setTargetMode('auto')}
+                                            >
+                                                توزيع كلي آلي ⚡
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`btn ${targetMode === 'single' ? 'btn-primary' : 'btn-ghost'}`}
+                                                style={{ padding: '6px 14px', fontSize: '13px', minHeight: '34px', borderRadius: '8px' }}
+                                                onClick={() => setTargetMode('single')}
+                                            >
+                                                تحديد فردي لِعامل 👤
                                             </button>
                                         </div>
                                     </div>
+
+                                    {targetMode === 'auto' ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', alignItems: 'flex-start' }}>
+                                                <div className="field">
+                                                    <label style={{ fontWeight: 'bold' }}>إجمالي العدد المطلوب لليوم (مثلاً 50)</label>
+                                                    <input
+                                                        type="number" min="1" step="1"
+                                                        value={bulkTotalBoxes}
+                                                        onChange={e => setBulkTotalBoxes(e.target.value)}
+                                                        placeholder="أدخل العدد الكلي (مثل 50)"
+                                                    />
+                                                </div>
+                                                <div className="field">
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                        <label style={{ fontWeight: 'bold', margin: 0 }}>اختيار العمال المستهدفين ({selectedWorkersForTarget.length})</label>
+                                                        <button
+                                                            type="button"
+                                                            style={{ background: 'none', border: 'none', color: 'var(--tomato)', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                                            onClick={() => {
+                                                                const allNames = catWorkers.map(w => w.full_name);
+                                                                if (selectedWorkersForTarget.length === allNames.length) {
+                                                                    setSelectedWorkersForTarget([]);
+                                                                } else {
+                                                                    setSelectedWorkersForTarget(allNames);
+                                                                }
+                                                            }}
+                                                        >
+                                                            {selectedWorkersForTarget.length === catWorkers.length ? 'إلغاء التحديد' : 'تحديد جميع العمال'}
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '120px', overflowY: 'auto', padding: '8px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--line)' }}>
+                                                        {catWorkers.length === 0 ? (
+                                                            <span style={{ fontSize: '13px', color: 'var(--ink-soft)' }}>لا يوجد عمال مسجلون بعد</span>
+                                                        ) : catWorkers.map(w => {
+                                                            const isSelected = selectedWorkersForTarget.includes(w.full_name);
+                                                            return (
+                                                                <button
+                                                                    key={w.id}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (isSelected) {
+                                                                            setSelectedWorkersForTarget(selectedWorkersForTarget.filter(n => n !== w.full_name));
+                                                                        } else {
+                                                                            setSelectedWorkersForTarget([...selectedWorkersForTarget, w.full_name]);
+                                                                        }
+                                                                    }}
+                                                                    style={{
+                                                                        padding: '6px 12px',
+                                                                        borderRadius: '20px',
+                                                                        border: isSelected ? '1.5px solid var(--tomato)' : '1px solid #cbd5e1',
+                                                                        background: isSelected ? 'var(--tomato-xlight)' : '#fff',
+                                                                        color: isSelected ? 'var(--tomato-dark)' : 'var(--ink)',
+                                                                        fontWeight: isSelected ? 'bold' : 'normal',
+                                                                        fontSize: '13px',
+                                                                        cursor: 'pointer',
+                                                                        transition: 'all 0.15s'
+                                                                    }}
+                                                                >
+                                                                    {isSelected ? '✓ ' : '+ '}{w.full_name}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Live Distribution Preview Card */}
+                                            {getBulkDistribution().length > 0 && (
+                                                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px 16px', borderRadius: '10px' }}>
+                                                    <div style={{ fontWeight: 'bold', fontSize: '13.5px', color: '#166534', marginBottom: '8px' }}>
+                                                        📊 المعاينة التلقائية للتوزيع ({bulkTotalBoxes} بكس مقسمة على {selectedWorkersForTarget.length} عمال):
+                                                    </div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                        {getBulkDistribution().map(item => (
+                                                            <span key={item.worker_name} style={{ background: '#fff', padding: '4px 10px', borderRadius: '6px', border: '1px solid #86efac', fontSize: '13px', color: '#15803d', fontWeight: 'bold' }}>
+                                                                {item.worker_name}: <span style={{ color: 'var(--tomato-dark)', fontSize: '14px' }}>{item.target_boxes}</span> بكس
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div style={{ marginTop: '4px' }}>
+                                                <button className="btn btn-primary" style={{ width: '100%' }} onClick={submitBulkInspectionTargets}>
+                                                    حفظ وتوزيع الهدف الكلي على العمال
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="boxes-form-grid">
+                                            <div className="field">
+                                                <label>اسم العامل</label>
+                                                <input
+                                                    value={targetWorkerName}
+                                                    onChange={e => setTargetWorkerName(e.target.value)}
+                                                    placeholder="أدخل أو ابحث عن اسم العامل"
+                                                    list="workers-list"
+                                                />
+                                                <datalist id="workers-list">
+                                                    {catWorkers.map(w => (
+                                                        <option key={w.id} value={w.full_name} />
+                                                    ))}
+                                                </datalist>
+                                            </div>
+                                            <div className="field">
+                                                <label>العدد المطلوب تحقيقه (بكس)</label>
+                                                <input
+                                                    type="number" min="1" step="1"
+                                                    value={targetBoxesCount}
+                                                    onChange={e => setTargetBoxesCount(e.target.value)}
+                                                    placeholder="0"
+                                                />
+                                            </div>
+                                            <div className="field btn-submit-wrapper" style={{ margin: 0 }}>
+                                                <button className="btn btn-primary" style={{ width: '100%' }} onClick={submitInspectionTarget}>
+                                                    حفظ الهدف
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

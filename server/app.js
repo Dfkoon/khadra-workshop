@@ -560,15 +560,18 @@ app.post('/api/inspection-targets', authenticateToken, requireAdminOrInspectionC
   if (!worker_name || !target_boxes) return res.status(400).json({ error: 'الاسم والعدد مطلوبان' });
   const date = target_date || new Date().toISOString().slice(0, 10);
   try {
-    const result = await db.prepare(`
-      INSERT INTO inspection_targets (worker_name, target_boxes, target_date, created_by)
-      VALUES (?, ?, ?, ?)
-    `).run(worker_name, parseInt(target_boxes), date, req.user.id);
-    res.status(201).json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(result.lastInsertRowid));
-  } catch (e) {
-    if (e.message.includes('UNIQUE')) {
-      return res.status(400).json({ error: 'تم تحديد هدف لهذا العامل في هذا اليوم مسبقاً' });
+    const existing = await db.prepare('SELECT id FROM inspection_targets WHERE worker_name = ? AND target_date = ?').get(worker_name, date);
+    if (existing) {
+      await db.prepare('UPDATE inspection_targets SET target_boxes = ? WHERE id = ?').run(parseInt(target_boxes), existing.id);
+      res.json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(existing.id));
+    } else {
+      const result = await db.prepare(`
+        INSERT INTO inspection_targets (worker_name, target_boxes, target_date, created_by)
+        VALUES (?, ?, ?, ?)
+      `).run(worker_name, parseInt(target_boxes), date, req.user.id);
+      res.status(201).json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(result.lastInsertRowid));
     }
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
