@@ -103,6 +103,11 @@ export const api = {
   createInspectionRecord: (data) => request('POST', '/api/inspection-records', data),
   deleteInspectionRecord: (id)   => request('DELETE', `/api/inspection-records/${id}`),
 
+  /* ── Inspection Workers — عمال الفحص ── */
+  getInspectionWorkers:   ()       => request('GET',  '/api/inspection-workers'),
+  createInspectionWorker: (data)   => request('POST', '/api/inspection-workers', data),
+  deleteInspectionWorker: (id)     => request('DELETE',`/api/inspection-workers/${id}`),
+
   /* ── Inspection Targets ── */
   getInspectionTargets: (date) => {
     const q = date ? `?date=${date}` : '';

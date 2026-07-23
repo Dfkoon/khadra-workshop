@@ -541,6 +541,38 @@ app.delete('/api/inspection-records/:id', authenticateToken, requireAdmin, async
 });
 
 /* ═══════════════════════════════════════════
+   INSPECTION WORKERS (عمال الفحص)
+═══════════════════════════════════════════ */
+app.get('/api/inspection-workers', authenticateToken, async (req, res) => {
+  res.json(await db.prepare('SELECT * FROM inspection_workers WHERE is_active = 1 ORDER BY id').all());
+});
+
+app.post('/api/inspection-workers', authenticateToken, requireAdminOrInspectionCoordinator, async (req, res) => {
+  const { full_name, notes } = req.body;
+  if (!full_name) return res.status(400).json({ error: 'اسم عامل الفحص مطلوب' });
+  try {
+    const existing = await db.prepare('SELECT * FROM inspection_workers WHERE full_name = ?').get(full_name);
+    if (existing) {
+      if (!existing.is_active) {
+        await db.prepare('UPDATE inspection_workers SET is_active = 1, notes = ? WHERE id = ?').run(notes || '', existing.id);
+        return res.json(await db.prepare('SELECT * FROM inspection_workers WHERE id = ?').get(existing.id));
+      }
+      return res.status(400).json({ error: 'عامل الفحص موجود مسبقاً' });
+    }
+    const result = await db.prepare('INSERT INTO inspection_workers (full_name, notes, is_active) VALUES (?, ?, 1)')
+      .run(full_name, notes || '');
+    res.status(201).json(await db.prepare('SELECT * FROM inspection_workers WHERE id = ?').get(result.lastInsertRowid));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/inspection-workers/:id', authenticateToken, requireAdminOrInspectionCoordinator, async (req, res) => {
+  await db.prepare('UPDATE inspection_workers SET is_active = 0 WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+/* ═══════════════════════════════════════════
    INSPECTION TARGETS (أهداف عمال الفحص)
 ═══════════════════════════════════════════ */
 app.get('/api/inspection-targets', authenticateToken, async (req, res) => {

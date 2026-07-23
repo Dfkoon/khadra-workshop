@@ -175,6 +175,14 @@ export async function initializeDatabase() {
       FOREIGN KEY(created_by) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS inspection_workers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      full_name TEXT NOT NULL UNIQUE,
+      notes TEXT DEFAULT '',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS inspection_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       worker_name TEXT NOT NULL,

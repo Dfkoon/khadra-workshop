@@ -45,9 +45,11 @@ export default function Boxes() {
     // Usage (سجل البكس) state
     const [usage, setUsage] = useState([]);
 
-    // Inspection records & targets state
+    // Inspection records, targets & workers state
     const [inspRecords, setInspRecords] = useState([]);
     const [inspTargets, setInspTargets] = useState([]);
+    const [inspWorkers, setInspWorkers] = useState([]);
+    const [newInspWorkerInput, setNewInspWorkerInput] = useState('');
     const [inspWorkerName, setInspWorkerName] = useState('');
     const [inspBoxesCount, setInspBoxesCount] = useState('');
     const [inspStartTime, setInspStartTime] = useState('');
@@ -87,9 +89,29 @@ export default function Boxes() {
                     target_date: targetDate
                 });
             }
-            toast.success(`تم توزيع وتقسيم ${bulkTotalBoxes} بكس على ${dist.length} عمال بنجاح ✨`);
+            toast.success(`تم توزيع وتقسيم ${bulkTotalBoxes} بكس على ${dist.length} عمال فحص بنجاح ✨`);
             setBulkTotalBoxes('');
             load();
+        } catch (e) {
+            toast.error(e.message);
+        }
+    }
+
+    async function handleAddInspectionWorker(nameOverride) {
+        const name = (nameOverride || newInspWorkerInput).trim();
+        if (!name) {
+            toast.error('أدخل اسم عامل الفحص');
+            return;
+        }
+        try {
+            await api.createInspectionWorker({ full_name: name });
+            toast.success('تمت إضافة عامل الفحص بنجاح');
+            setNewInspWorkerInput('');
+            const updated = await api.getInspectionWorkers();
+            setInspWorkers(updated || []);
+            if (!selectedWorkersForTarget.includes(name)) {
+                setSelectedWorkersForTarget(prev => [...prev, name]);
+            }
         } catch (e) {
             toast.error(e.message);
         }
@@ -113,14 +135,15 @@ export default function Boxes() {
 
     const load = useCallback(async () => {
         try {
-            const [w, r, c, hw, insp, u, t] = await Promise.all([
+            const [w, r, c, hw, insp, u, t, iw] = await Promise.all([
                 api.getDailyWorkers(),
                 api.getDailyWorkRecords(),
                 api.getCategories(),
                 api.getWorkers(),
                 api.getInspectionRecords(),
                 api.getUsage(),
-                api.getInspectionTargets()
+                api.getInspectionTargets(),
+                api.getInspectionWorkers()
             ]);
             setWorkers(w || []);
             setRecords(r || []);
@@ -129,6 +152,7 @@ export default function Boxes() {
             setInspRecords(insp || []);
             setUsage(u || []);
             setInspTargets(t || []);
+            setInspWorkers(iw || []);
             if (w?.length && !workerId) setWorkerId(String(w[0].id));
             if (c?.length && !useCat) setUseCat(String(c[0].id));
         } catch (e) {
@@ -598,36 +622,63 @@ export default function Boxes() {
                                                 </div>
                                                 <div className="field">
                                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                                                        <label style={{ fontWeight: 'bold', margin: 0 }}>اختيار العمال المستهدفين ({selectedWorkersForTarget.length})</label>
-                                                        <button
-                                                            type="button"
-                                                            style={{ background: 'none', border: 'none', color: 'var(--tomato)', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
-                                                            onClick={() => {
-                                                                const allNames = catWorkers.map(w => w.full_name);
-                                                                if (selectedWorkersForTarget.length === allNames.length) {
-                                                                    setSelectedWorkersForTarget([]);
-                                                                } else {
-                                                                    setSelectedWorkersForTarget(allNames);
+                                                        <label style={{ fontWeight: 'bold', margin: 0 }}>اختيار عمال الفحص المستهدفين ({selectedWorkersForTarget.length})</label>
+                                                        {inspWorkers.length > 0 && (
+                                                            <button
+                                                                type="button"
+                                                                style={{ background: 'none', border: 'none', color: 'var(--tomato)', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                                                                onClick={() => {
+                                                                    const allNames = Array.from(new Set([...inspWorkers.map(w => w.full_name), ...inspTargets.map(t => t.worker_name)]));
+                                                                    if (selectedWorkersForTarget.length === allNames.length) {
+                                                                        setSelectedWorkersForTarget([]);
+                                                                    } else {
+                                                                        setSelectedWorkersForTarget(allNames);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {selectedWorkersForTarget.length === Array.from(new Set([...inspWorkers.map(w => w.full_name), ...inspTargets.map(t => t.worker_name)])).length ? 'إلغاء التحديد' : 'تحديد جميع عمال الفحص'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Quick add inspection worker inline input */}
+                                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                                                        <input
+                                                            value={newInspWorkerInput}
+                                                            onChange={e => setNewInspWorkerInput(e.target.value)}
+                                                            placeholder="إضافة اسم عامل/عاملة فحص جديد..."
+                                                            style={{ fontSize: '13px', padding: '6px 10px', height: '36px', minHeight: '36px' }}
+                                                            onKeyDown={e => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    handleAddInspectionWorker();
                                                                 }
                                                             }}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-outline"
+                                                            style={{ minHeight: '36px', height: '36px', padding: '0 12px', fontSize: '13px', whiteSpace: 'nowrap' }}
+                                                            onClick={() => handleAddInspectionWorker()}
                                                         >
-                                                            {selectedWorkersForTarget.length === catWorkers.length ? 'إلغاء التحديد' : 'تحديد جميع العمال'}
+                                                            + إضافة عامل فحص
                                                         </button>
                                                     </div>
+
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '120px', overflowY: 'auto', padding: '8px', background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--line)' }}>
-                                                        {catWorkers.length === 0 ? (
-                                                            <span style={{ fontSize: '13px', color: 'var(--ink-soft)' }}>لا يوجد عمال مسجلون بعد</span>
-                                                        ) : catWorkers.map(w => {
-                                                            const isSelected = selectedWorkersForTarget.includes(w.full_name);
+                                                        {Array.from(new Set([...inspWorkers.map(w => w.full_name), ...inspTargets.map(t => t.worker_name)])).length === 0 ? (
+                                                            <span style={{ fontSize: '13px', color: 'var(--ink-soft)' }}>أدخل أسماء عمال الفحص أعلاه لإظهارهم هنا والبدء بالتوزيع</span>
+                                                        ) : Array.from(new Set([...inspWorkers.map(w => w.full_name), ...inspTargets.map(t => t.worker_name)])).map(wName => {
+                                                            const isSelected = selectedWorkersForTarget.includes(wName);
                                                             return (
                                                                 <button
-                                                                    key={w.id}
+                                                                    key={wName}
                                                                     type="button"
                                                                     onClick={() => {
                                                                         if (isSelected) {
-                                                                            setSelectedWorkersForTarget(selectedWorkersForTarget.filter(n => n !== w.full_name));
+                                                                            setSelectedWorkersForTarget(selectedWorkersForTarget.filter(n => n !== wName));
                                                                         } else {
-                                                                            setSelectedWorkersForTarget([...selectedWorkersForTarget, w.full_name]);
+                                                                            setSelectedWorkersForTarget([...selectedWorkersForTarget, wName]);
                                                                         }
                                                                     }}
                                                                     style={{
@@ -642,7 +693,7 @@ export default function Boxes() {
                                                                         transition: 'all 0.15s'
                                                                     }}
                                                                 >
-                                                                    {isSelected ? '✓ ' : '+ '}{w.full_name}
+                                                                    {isSelected ? '✓ ' : '+ '}{wName}
                                                                 </button>
                                                             );
                                                         })}
@@ -654,7 +705,7 @@ export default function Boxes() {
                                             {getBulkDistribution().length > 0 && (
                                                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px 16px', borderRadius: '10px' }}>
                                                     <div style={{ fontWeight: 'bold', fontSize: '13.5px', color: '#166534', marginBottom: '8px' }}>
-                                                        📊 المعاينة التلقائية للتوزيع ({bulkTotalBoxes} بكس مقسمة على {selectedWorkersForTarget.length} عمال):
+                                                        📊 المعاينة التلقائية للتوزيع ({bulkTotalBoxes} بكس مقسمة على {selectedWorkersForTarget.length} عمال فحص):
                                                     </div>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                                         {getBulkDistribution().map(item => (
@@ -668,23 +719,23 @@ export default function Boxes() {
 
                                             <div style={{ marginTop: '4px' }}>
                                                 <button className="btn btn-primary" style={{ width: '100%' }} onClick={submitBulkInspectionTargets}>
-                                                    حفظ وتوزيع الهدف الكلي على العمال
+                                                    حفظ وتوزيع الهدف الكلي على عمال الفحص
                                                 </button>
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="boxes-form-grid">
                                             <div className="field">
-                                                <label>اسم العامل</label>
+                                                <label>اسم عامل الفحص</label>
                                                 <input
                                                     value={targetWorkerName}
                                                     onChange={e => setTargetWorkerName(e.target.value)}
-                                                    placeholder="أدخل أو ابحث عن اسم العامل"
-                                                    list="workers-list"
+                                                    placeholder="أدخل أو اختر اسم عامل الفحص"
+                                                    list="insp-workers-list"
                                                 />
-                                                <datalist id="workers-list">
-                                                    {catWorkers.map(w => (
-                                                        <option key={w.id} value={w.full_name} />
+                                                <datalist id="insp-workers-list">
+                                                    {Array.from(new Set([...inspWorkers.map(w => w.full_name), ...inspTargets.map(t => t.worker_name)])).map(name => (
+                                                        <option key={name} value={name} />
                                                     ))}
                                                 </datalist>
                                             </div>
@@ -724,9 +775,9 @@ export default function Boxes() {
                                                         {t.worker_name} (الهدف: {t.target_boxes} بكس)
                                                     </option>
                                                 ))}
-                                                {catWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).length > 0 && (
-                                                    <optgroup label="باقي العمال">
-                                                        {catWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).map(w => (
+                                                {inspWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).length > 0 && (
+                                                    <optgroup label="باقي عمال الفحص">
+                                                        {inspWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).map(w => (
                                                             <option key={w.id} value={w.full_name}>{w.full_name}</option>
                                                         ))}
                                                     </optgroup>
