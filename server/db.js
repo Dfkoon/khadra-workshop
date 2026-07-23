@@ -212,6 +212,27 @@ export function initializeDatabase() {
     }
   }
 
+  // Fix foreign keys referencing users_old from past ALTER TABLE
+  try {
+    const tablesToFix = ['category_usage', 'shift_records', 'box_allocations', 'daily_work_records', 'attendance', 'inspection_records', 'inspection_targets'];
+    db.exec('PRAGMA foreign_keys = OFF;');
+    for (const table of tablesToFix) {
+      const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table);
+      if (row && row.sql && row.sql.includes('users_old')) {
+        const newSql = row.sql.replace(/"users_old"/g, 'users').replace(/users_old/g, 'users');
+        db.exec(`
+          ALTER TABLE ${table} RENAME TO ${table}_temp;
+          ${newSql};
+          INSERT INTO ${table} SELECT * FROM ${table}_temp;
+          DROP TABLE ${table}_temp;
+        `);
+      }
+    }
+    db.exec('PRAGMA foreign_keys = ON;');
+  } catch (e) {
+    console.log('Foreign key cleanup note:', e.message);
+  }
+
   /* ─────────────────────────────────────────
      3. Migrations — إضافة أعمدة مفقودة
   ───────────────────────────────────────── */

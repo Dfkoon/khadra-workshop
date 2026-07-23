@@ -595,7 +595,7 @@ export default function Boxes() {
                                         </div>
                                         <div className="field btn-submit-wrapper" style={{ margin: 0 }}>
                                             <button className="btn btn-success" style={{ width: '100%' }} onClick={submitInspectionRecord}>
-                                                تسجيل فحص
+                                                تسجيل عدد
                                             </button>
                                         </div>
                                     </div>
