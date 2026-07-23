@@ -604,72 +604,114 @@ export default function Boxes() {
 
                             <div className="section">
                                 <h3>متابعة إنجاز عمال الفحص</h3>
-                                <div className="table-wrapper">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>العامل</th>
-                                                <th>الهدف المطلوب</th>
-                                                <th>المُنجز</th>
-                                                <th>المتبقي</th>
-                                                <th>الحالة / التقدم</th>
-                                                {isAdmin && <th>الإجراءات</th>}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {Array.from(new Set([...inspTargets.map(t => t.worker_name), ...inspRecords.map(r => r.worker_name)])).length === 0 ? (
-                                                <tr className="empty-row">
-                                                    <td colSpan={isAdmin ? 6 : 5}>
-                                                        <div className="empty-state">
-                                                            <div className="empty-text">لا توجد أهداف أو سجلات أعداد فحص بعد</div>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ) : Array.from(new Set([...inspTargets.map(t => t.worker_name), ...inspRecords.map(r => r.worker_name)])).map(workerName => {
-                                                const targetRow = inspTargets.find(t => t.worker_name === workerName);
-                                                const target = targetRow ? targetRow.target_boxes : 0;
-                                                const completed = inspRecords.filter(r => r.worker_name === workerName).reduce((sum, r) => sum + r.boxes_count, 0);
-                                                const remaining = Math.max(0, target - completed);
-                                                const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 100;
-                                                const isDone = target > 0 && completed >= target;
-                                                
-                                                return (
-                                                    <tr key={workerName} style={isDone ? { backgroundColor: 'rgba(34, 197, 94, 0.05)' } : {}}>
-                                                        <td><strong>{workerName}</strong></td>
-                                                        <td><span className="badge badge-grey">{target > 0 ? target : 'غير محدد'}</span></td>
-                                                        <td><span className="badge badge-amber">{completed}</span></td>
-                                                        <td><span className="badge badge-red">{target > 0 ? remaining : '—'}</span></td>
-                                                        <td style={{ minWidth: '150px' }}>
-                                                            {isDone ? (
-                                                                <div style={{ color: 'var(--leaf)', fontWeight: 'bold', fontSize: '13px' }}>
-                                                                    ✓ اكتملت المهمة للعمالة {workerName}
-                                                                </div>
-                                                            ) : (
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                    <div style={{ flex: 1, background: '#eee', height: '6px', borderRadius: '4px', overflow: 'hidden' }}>
-                                                                        <div style={{ width: `${pct}%`, background: 'var(--leaf)', height: '100%' }}></div>
+                                {(() => {
+                                    const allWorkerNames = Array.from(new Set([...inspTargets.map(t => t.worker_name), ...inspRecords.map(r => r.worker_name)]));
+                                    const totalInspTarget = inspTargets.reduce((sum, t) => sum + Number(t.target_boxes || 0), 0);
+                                    const totalInspCompleted = inspRecords.reduce((sum, r) => sum + Number(r.boxes_count || 0), 0);
+                                    const totalInspRemaining = allWorkerNames.reduce((sum, workerName) => {
+                                        const targetRow = inspTargets.find(t => t.worker_name === workerName);
+                                        const target = targetRow ? targetRow.target_boxes : 0;
+                                        const completed = inspRecords.filter(r => r.worker_name === workerName).reduce((s, r) => s + r.boxes_count, 0);
+                                        return sum + Math.max(0, target - completed);
+                                    }, 0);
+
+                                    return (
+                                        <>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                                                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>إجمالي الهدف المطلوب</div>
+                                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{totalInspTarget}</div>
+                                                </div>
+                                                <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #bbf7d0', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '13px', color: '#166534', marginBottom: '6px', fontWeight: 'bold' }}>إجمالي المُنْجَز</div>
+                                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#15803d' }}>{totalInspCompleted}</div>
+                                                </div>
+                                                <div style={{ background: '#fef2f2', padding: '16px', borderRadius: '12px', border: '1px solid #fecaca', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '13px', color: '#991b1b', marginBottom: '6px', fontWeight: 'bold' }}>إجمالي المتبقي</div>
+                                                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc2626' }}>{totalInspRemaining}</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="table-wrapper">
+                                                <table>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>العامل</th>
+                                                            <th>الهدف المطلوب</th>
+                                                            <th>المُنجز</th>
+                                                            <th>المتبقي</th>
+                                                            <th>الحالة / التقدم</th>
+                                                            {isAdmin && <th>الإجراءات</th>}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {allWorkerNames.length === 0 ? (
+                                                            <tr className="empty-row">
+                                                                <td colSpan={isAdmin ? 6 : 5}>
+                                                                    <div className="empty-state">
+                                                                        <div className="empty-text">لا توجد أهداف أو سجلات أعداد فحص بعد</div>
                                                                     </div>
-                                                                    <span style={{ fontSize: '12px', color: 'var(--ink-soft)' }}>{pct}%</span>
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        {isAdmin && (
-                                                            <td>
-                                                                {targetRow && (
-                                                                    <div className="action-btns">
-                                                                        <button className="btn-del" onClick={() => deleteInspectionTarget(targetRow.id)}>
-                                                                            حذف الهدف
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </td>
-                                                        )}
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                                </td>
+                                                            </tr>
+                                                        ) : allWorkerNames.map(workerName => {
+                                                            const targetRow = inspTargets.find(t => t.worker_name === workerName);
+                                                            const target = targetRow ? targetRow.target_boxes : 0;
+                                                            const completed = inspRecords.filter(r => r.worker_name === workerName).reduce((sum, r) => sum + r.boxes_count, 0);
+                                                            const remaining = Math.max(0, target - completed);
+                                                            const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 100;
+                                                            const isDone = target > 0 && completed >= target;
+                                                            
+                                                            return (
+                                                                <tr key={workerName} style={isDone ? { backgroundColor: 'rgba(34, 197, 94, 0.05)' } : {}}>
+                                                                    <td><strong>{workerName}</strong></td>
+                                                                    <td><span className="badge badge-grey">{target > 0 ? target : 'غير محدد'}</span></td>
+                                                                    <td><span className="badge badge-amber">{completed}</span></td>
+                                                                    <td><span className="badge badge-red">{target > 0 ? remaining : '—'}</span></td>
+                                                                    <td style={{ minWidth: '150px' }}>
+                                                                        {isDone ? (
+                                                                            <div style={{ color: 'var(--leaf)', fontWeight: 'bold', fontSize: '13px' }}>
+                                                                                ✓ اكتملت المهمة للعمالة {workerName}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                                <div style={{ flex: 1, background: '#eee', height: '6px', borderRadius: '4px', overflow: 'hidden' }}>
+                                                                                    <div style={{ width: `${pct}%`, background: 'var(--leaf)', height: '100%' }}></div>
+                                                                                </div>
+                                                                                <span style={{ fontSize: '12px', color: 'var(--ink-soft)' }}>{pct}%</span>
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    {isAdmin && (
+                                                                        <td>
+                                                                            {targetRow && (
+                                                                                <div className="action-btns">
+                                                                                    <button className="btn-del" onClick={() => deleteInspectionTarget(targetRow.id)}>
+                                                                                        حذف الهدف
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
+                                                                        </td>
+                                                                    )}
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                    {allWorkerNames.length > 0 && (
+                                                        <tfoot>
+                                                            <tr style={{ background: '#f8fafc', fontWeight: 'bold' }}>
+                                                                <td>الإجمالي العام</td>
+                                                                <td><span className="badge badge-grey">{totalInspTarget}</span></td>
+                                                                <td><span className="badge badge-amber">{totalInspCompleted}</span></td>
+                                                                <td><span className="badge badge-red">{totalInspRemaining}</span></td>
+                                                                <td colSpan={isAdmin ? 2 : 1}></td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    )}
+                                                </table>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                                 <div className="table-wrapper" style={{ marginTop: '24px' }}>
                                     <h4 style={{ marginBottom: '16px', color: 'var(--ink)' }}>تفاصيل إدخالات الفحص</h4>
                                     <table>
