@@ -1,4 +1,4 @@
-const API_BASE = '';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://khadra-workshop.onrender.com';
 
 function getToken() {
   return localStorage.getItem('khadraToken') || '';
