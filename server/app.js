@@ -598,19 +598,20 @@ app.get('/api/inspection-targets', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/inspection-targets', authenticateToken, requireAdminOrInspectionCoordinator, async (req, res) => {
-  const { worker_name, target_boxes, target_date } = req.body;
+  const { worker_name, target_boxes, target_date, category_name } = req.body;
   if (!worker_name || !target_boxes) return res.status(400).json({ error: 'الاسم والعدد مطلوبان' });
   const date = target_date || new Date().toISOString().slice(0, 10);
+  const catName = category_name || '';
   try {
     const existing = await db.prepare('SELECT id FROM inspection_targets WHERE worker_name = ? AND target_date = ?').get(worker_name, date);
     if (existing) {
-      await db.prepare('UPDATE inspection_targets SET target_boxes = ? WHERE id = ?').run(parseInt(target_boxes), existing.id);
+      await db.prepare('UPDATE inspection_targets SET target_boxes = ?, category_name = ? WHERE id = ?').run(parseInt(target_boxes), catName, existing.id);
       res.json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(existing.id));
     } else {
       const result = await db.prepare(`
-        INSERT INTO inspection_targets (worker_name, target_boxes, target_date, created_by)
-        VALUES (?, ?, ?, ?)
-      `).run(worker_name, parseInt(target_boxes), date, req.user.id);
+        INSERT INTO inspection_targets (worker_name, target_boxes, target_date, category_name, created_by)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(worker_name, parseInt(target_boxes), date, catName, req.user.id);
       res.status(201).json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(result.lastInsertRowid));
     }
   } catch (e) {

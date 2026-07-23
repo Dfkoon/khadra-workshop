@@ -58,6 +58,7 @@ export default function Boxes() {
     // Admin only Target assignment state
     const [targetWorkerName, setTargetWorkerName] = useState('');
     const [targetBoxesCount, setTargetBoxesCount] = useState('');
+    const [targetCategory, setTargetCategory] = useState('بندورة');
     const [targetMode, setTargetMode] = useState('auto'); // 'auto' or 'single'
     const [bulkTotalBoxes, setBulkTotalBoxes] = useState('');
     const [selectedWorkersForTarget, setSelectedWorkersForTarget] = useState([]);
@@ -86,10 +87,11 @@ export default function Boxes() {
                 await api.createInspectionTarget({
                     worker_name: item.worker_name,
                     target_boxes: item.target_boxes,
-                    target_date: targetDate
+                    target_date: targetDate,
+                    category_name: targetCategory
                 });
             }
-            toast.success(`تم توزيع وتقسيم ${bulkTotalBoxes} بكس على ${dist.length} عمال فحص بنجاح ✨`);
+            toast.success(`تم توزيع وتقسيم ${bulkTotalBoxes} بكس على ${dist.length} عمال فحص (${targetCategory}) بنجاح ✨`);
             setBulkTotalBoxes('');
             load();
         } catch (e) {
@@ -297,9 +299,10 @@ export default function Boxes() {
             await api.createInspectionTarget({
                 worker_name: targetWorkerName,
                 target_boxes: parseInt(targetBoxesCount),
-                target_date: new Date().toISOString().slice(0, 10)
+                target_date: new Date().toISOString().slice(0, 10),
+                category_name: targetCategory
             });
-            toast.success('تم تحديد الهدف بنجاح');
+            toast.success(`تم تحديد الهدف (${targetCategory}) بنجاح`);
             setTargetWorkerName('');
             setTargetBoxesCount('');
             load();
@@ -618,6 +621,45 @@ export default function Boxes() {
                                             </button>
                                         </div>
                                     </div>
+                                    
+                                    <div className="field" style={{ marginBottom: '16px', background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                                        <label style={{ fontWeight: 'bold', color: 'var(--primary-dark)', marginBottom: '8px', display: 'block' }}>🌱 الصنف (المنتج المراد العمل عليه):</label>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                            <input
+                                                value={targetCategory}
+                                                onChange={e => setTargetCategory(e.target.value)}
+                                                placeholder="أدخل أو اختر الصنف (مثلاً بندورة، خيار، فلفل...)"
+                                                list="crop-category-list"
+                                                style={{ flex: 1, minWidth: '180px', background: '#fff' }}
+                                            />
+                                            <datalist id="crop-category-list">
+                                                {['بندورة', 'خيار', 'فلفل', 'كوسا', 'زهرة', 'باذنجان', 'بطاطا', 'فراولة', 'تفاح', ...categories.map(c => c.name)].map(cat => (
+                                                    <option key={cat} value={cat} />
+                                                ))}
+                                            </datalist>
+                                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                {['بندورة', 'خيار', 'فلفل', 'كوسا', 'زهرة'].map(cat => (
+                                                    <button
+                                                        key={cat}
+                                                        type="button"
+                                                        onClick={() => setTargetCategory(cat)}
+                                                        style={{
+                                                            padding: '6px 12px',
+                                                            borderRadius: '8px',
+                                                            border: targetCategory === cat ? '1.5px solid var(--primary)' : '1px solid #cbd5e1',
+                                                            background: targetCategory === cat ? 'var(--primary-xlight)' : '#fff',
+                                                            color: targetCategory === cat ? 'var(--primary-dark)' : 'var(--ink)',
+                                                            fontSize: '12.5px',
+                                                            cursor: 'pointer',
+                                                            fontWeight: targetCategory === cat ? 'bold' : 'normal'
+                                                        }}
+                                                    >
+                                                        {cat}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
 
                                     {targetMode === 'auto' ? (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -716,7 +758,7 @@ export default function Boxes() {
                                             {getBulkDistribution().length > 0 && (
                                                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '14px 16px', borderRadius: '10px' }}>
                                                     <div style={{ fontWeight: 'bold', fontSize: '13.5px', color: '#166534', marginBottom: '8px' }}>
-                                                        📊 المعاينة التلقائية للتوزيع ({bulkTotalBoxes} بكس مقسمة على {selectedWorkersForTarget.length} عمال فحص):
+                                                        📊 المعاينة التلقائية للتوزيع ({bulkTotalBoxes} بكس {targetCategory ? `[صنف: ${targetCategory}]` : ''} مقسمة على {selectedWorkersForTarget.length} عمال فحص):
                                                     </div>
                                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                                         {getBulkDistribution().map(item => (
@@ -730,7 +772,7 @@ export default function Boxes() {
 
                                             <div style={{ marginTop: '4px' }}>
                                                 <button className="btn btn-primary" style={{ width: '100%' }} onClick={submitBulkInspectionTargets}>
-                                                    حفظ وتوزيع الهدف الكلي على عمال الفحص
+                                                    حفظ وتوزيع الهدف الكلي على عمال الفحص {targetCategory ? `(${targetCategory})` : ''}
                                                 </button>
                                             </div>
                                         </div>
@@ -783,7 +825,7 @@ export default function Boxes() {
                                                 <option value="">-- اختر اسم العامل --</option>
                                                 {inspTargets.map(t => (
                                                     <option key={t.id} value={t.worker_name}>
-                                                        {t.worker_name} (الهدف: {t.target_boxes} بكس)
+                                                        {t.worker_name} {t.category_name ? `(${t.category_name})` : ''} (الهدف: {t.target_boxes} بكس)
                                                     </option>
                                                 ))}
                                                 {inspWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).length > 0 && (
@@ -847,7 +889,7 @@ export default function Boxes() {
                                                 <table>
                                                     <thead>
                                                         <tr>
-                                                            <th>العامل</th>
+                                                            <th>العامل / الصنف</th>
                                                             <th>الهدف المطلوب</th>
                                                             <th>المُنجز</th>
                                                             <th>المتبقي</th>
@@ -874,7 +916,14 @@ export default function Boxes() {
                                                             
                                                             return (
                                                                 <tr key={workerName} style={isDone ? { backgroundColor: 'rgba(34, 197, 94, 0.05)' } : {}}>
-                                                                    <td><strong>{workerName}</strong></td>
+                                                                    <td>
+                                                                        <strong>{workerName}</strong>
+                                                                        {targetRow?.category_name && (
+                                                                            <span className="badge" style={{ fontSize: '11px', marginRight: '6px', backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                                                                                🌱 {targetRow.category_name}
+                                                                            </span>
+                                                                        )}
+                                                                    </td>
                                                                     <td><span className="badge badge-grey">{target > 0 ? target : 'غير محدد'}</span></td>
                                                                     <td><span className="badge badge-amber">{completed}</span></td>
                                                                     <td><span className="badge badge-red">{target > 0 ? remaining : '—'}</span></td>
@@ -935,7 +984,7 @@ export default function Boxes() {
                                             <tr>
                                                 <th>العامل</th>
                                                 <th>العدد (بكس)</th>
-                                                <th>وقت البدء</th>
+                                                <th>وقت الإدخال بالثانية</th>
                                                 <th>التاريخ</th>
                                                 {isAdmin && <th>الإجراءات</th>}
                                             </tr>
@@ -949,25 +998,34 @@ export default function Boxes() {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ) : inspRecords.map(r => (
-                                                <tr key={r.id}>
-                                                    <td><strong>{r.worker_name}</strong></td>
-                                                    <td><span className="badge badge-green">{r.boxes_count}</span></td>
-                                                    <td>{r.start_time || '—'}</td>
-                                                    <td style={{ color: 'var(--ink-soft)' }}>
-                                                        {new Date(r.work_date).toLocaleDateString('ar-EG')}
-                                                    </td>
-                                                    {isAdmin && (
+                                            ) : inspRecords.map(r => {
+                                                const timeStr = r.created_at
+                                                    ? new Date(r.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
+                                                    : (r.start_time || '—');
+                                                return (
+                                                    <tr key={r.id}>
+                                                        <td><strong>{r.worker_name}</strong></td>
+                                                        <td><span className="badge badge-green">{r.boxes_count}</span></td>
                                                         <td>
-                                                            <div className="action-btns">
-                                                                <button className="btn-del" onClick={() => deleteInspectionRecord(r.id)}>
-                                                                    حذف
-                                                                </button>
-                                                            </div>
+                                                            <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--primary-dark)', direction: 'ltr', display: 'inline-block' }}>
+                                                                {timeStr}
+                                                            </span>
                                                         </td>
-                                                    )}
-                                                </tr>
-                                            ))}
+                                                        <td style={{ color: 'var(--ink-soft)' }}>
+                                                            {new Date(r.work_date).toLocaleDateString('ar-EG')}
+                                                        </td>
+                                                        {isAdmin && (
+                                                            <td>
+                                                                <div className="action-btns">
+                                                                    <button className="btn-del" onClick={() => deleteInspectionRecord(r.id)}>
+                                                                        حذف
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        )}
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>

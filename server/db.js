@@ -202,10 +202,14 @@ export async function initializeDatabase() {
       worker_name TEXT NOT NULL,
       target_boxes INTEGER NOT NULL,
       target_date TEXT NOT NULL,
+      category_name TEXT DEFAULT '',
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(created_by) REFERENCES users(id),
       UNIQUE(worker_name, target_date)
     );
+
+    try { await db.prepare("ALTER TABLE inspection_targets ADD COLUMN category_name TEXT DEFAULT ''").run(); } catch(e) {}
+    try { await db.prepare("ALTER TABLE inspection_records ADD COLUMN category_name TEXT DEFAULT ''").run(); } catch(e) {}
   `);
 }
