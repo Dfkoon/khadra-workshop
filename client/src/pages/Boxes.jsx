@@ -570,14 +570,14 @@ export default function Boxes() {
                                                 style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
                                             >
                                                 <option value="">-- اختر اسم العامل --</option>
-                                                {inspectionTargets.map(t => (
+                                                {inspTargets.map(t => (
                                                     <option key={t.id} value={t.worker_name}>
                                                         {t.worker_name} (الهدف: {t.target_boxes} بكس)
                                                     </option>
                                                 ))}
-                                                {catWorkers.filter(w => !inspectionTargets.some(t => t.worker_name === w.full_name)).length > 0 && (
+                                                {catWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).length > 0 && (
                                                     <optgroup label="باقي العمال">
-                                                        {catWorkers.filter(w => !inspectionTargets.some(t => t.worker_name === w.full_name)).map(w => (
+                                                        {catWorkers.filter(w => !inspTargets.some(t => t.worker_name === w.full_name)).map(w => (
                                                             <option key={w.id} value={w.full_name}>{w.full_name}</option>
                                                         ))}
                                                     </optgroup>
