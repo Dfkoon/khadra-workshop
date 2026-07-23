@@ -245,8 +245,8 @@ export default function Boxes() {
 
     // ─── Inspection Records Management ───
     async function submitInspectionRecord() {
-        if (!inspWorkerName || !inspBoxesCount) {
-            toast.error('أدخل اسم العامل وعدد أعداد الفحص');
+        if (!inspWorkerName || !inspBoxesCount || parseInt(inspBoxesCount) === 0) {
+            toast.error('أدخل اسم العامل وعدد أعداد الفحص (موجب أو بالسالب)');
             return;
         }
         try {
@@ -256,7 +256,7 @@ export default function Boxes() {
                 work_date: inspDate || new Date().toISOString().slice(0, 10),
                 start_time: inspStartTime || null
             });
-            toast.success('تم تسجيل أعداد الفحص بنجاح');
+            toast.success(parseInt(inspBoxesCount) < 0 ? 'تم خفض/تخصيم الأعداد بنجاح' : 'تم تسجيل أعداد الفحص بنجاح');
             // setInspWorkerName(''); -- Don't clear worker name so it's easier to enter multiple
             setInspBoxesCount('');
             setInspStartTime('');
@@ -271,6 +271,17 @@ export default function Boxes() {
         try {
             await api.deleteInspectionRecord(id);
             toast.success('تم الحذف');
+            load();
+        } catch (e) {
+            toast.error(e.message);
+        }
+    }
+
+    async function deleteWorkerInspectionRecords(workerName) {
+        if (!window.confirm(`تأكيد مسح كافة سجلات الفحص لليوم الخاصة بـ (${workerName})؟`)) return;
+        try {
+            await api.deleteInspectionRecordsByWorker(workerName, inspDate);
+            toast.success(`تم مسح سجلات ${workerName}`);
             load();
         } catch (e) {
             toast.error(e.message);
@@ -787,7 +798,7 @@ export default function Boxes() {
                                         <div className="field">
                                             <label>العدد (البكس)</label>
                                             <input
-                                                type="number" min="1" step="1"
+                                                type="number" step="1"
                                                 value={inspBoxesCount}
                                                 onChange={e => setInspBoxesCount(e.target.value)}
                                                 placeholder="0"
@@ -883,13 +894,18 @@ export default function Boxes() {
                                                                     </td>
                                                                     {isAdmin && (
                                                                         <td>
-                                                                            {targetRow && (
-                                                                                <div className="action-btns">
-                                                                                    <button className="btn-del" onClick={() => deleteInspectionTarget(targetRow.id)}>
+                                                                            <div className="action-btns" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                                                {targetRow && (
+                                                                                    <button className="btn-del" onClick={() => deleteInspectionTarget(targetRow.id)} title="حذف الهدف المحدد">
                                                                                         حذف الهدف
                                                                                     </button>
-                                                                                </div>
-                                                                            )}
+                                                                                )}
+                                                                                {inspRecords.some(r => r.worker_name === workerName) && (
+                                                                                    <button className="btn-del" style={{ background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }} onClick={() => deleteWorkerInspectionRecords(workerName)} title="مسح الأعداد المسجلة لهذا العامل">
+                                                                                        مسح السجلات
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
                                                                         </td>
                                                                     )}
                                                                 </tr>

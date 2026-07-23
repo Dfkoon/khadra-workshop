@@ -524,7 +524,9 @@ app.get('/api/inspection-records', authenticateToken, async (req, res) => {
 
 app.post('/api/inspection-records', authenticateToken, async (req, res) => {
   const { worker_name, boxes_count, work_date, start_time, notes } = req.body;
-  if (!worker_name || !boxes_count) return res.status(400).json({ error: 'اسم العامل وعدد الأعداد مطلوبان' });
+  if (!worker_name || boxes_count === undefined || boxes_count === '' || parseInt(boxes_count) === 0) {
+    return res.status(400).json({ error: 'اسم العامل وعدد الأعداد مطلوبان' });
+  }
   const date = work_date || new Date().toISOString().slice(0, 10);
   const session = await activeSession();
   const result = await db.prepare(`
@@ -533,6 +535,14 @@ app.post('/api/inspection-records', authenticateToken, async (req, res) => {
   `).run(worker_name, parseInt(boxes_count), date, start_time || null, notes || '', session?.id ?? null, req.user.id);
 
   res.status(201).json(await db.prepare('SELECT * FROM inspection_records WHERE id = ?').get(result.lastInsertRowid));
+});
+
+app.delete('/api/inspection-records/worker/:workerName', authenticateToken, requireAdmin, async (req, res) => {
+  const { workerName } = req.params;
+  const { date } = req.query;
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  await db.prepare('DELETE FROM inspection_records WHERE worker_name = ? AND work_date = ?').run(workerName, targetDate);
+  res.json({ success: true });
 });
 
 app.delete('/api/inspection-records/:id', authenticateToken, requireAdmin, async (req, res) => {

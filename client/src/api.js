@@ -102,6 +102,10 @@ export const api = {
   },
   createInspectionRecord: (data) => request('POST', '/api/inspection-records', data),
   deleteInspectionRecord: (id)   => request('DELETE', `/api/inspection-records/${id}`),
+  deleteInspectionRecordsByWorker: (workerName, date) => {
+    const q = date ? `?date=${date}` : '';
+    return request('DELETE', `/api/inspection-records/worker/${encodeURIComponent(workerName)}${q}`);
+  },
 
   /* ── Inspection Workers — عمال الفحص ── */
   getInspectionWorkers:   ()       => request('GET',  '/api/inspection-workers'),
