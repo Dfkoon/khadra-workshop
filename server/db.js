@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import bcrypt from 'bcryptjs';
+import { createClient } from '@libsql/client';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,15 +7,56 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const dbPath     = path.join(__dirname, '..', 'khadra.db');
 
-export const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
+const tursoUrl = process.env.TURSO_DATABASE_URL || 'https://khadra-db-hussienaldayyat2022-ops.aws-eu-west-1.turso.io';
+const tursoToken = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODQ3ODg4NjYsImlkIjoiMDE5ZjhkYjMtMWUwMS03YmQ4LWE2ZmQtYjBhMzU2MDMxM2Q2Iiwia2lkIjoiQkxoQjQ4akVoMlRDRnVmdXJUMVpBUUsyQjk3V3YtNFlRejREV3h2OEkzUSIsInJpZCI6ImVkMjhhNjU0LWY2ODItNDBjMy05MzE5LWRmOGNkMzFhN2YxZSJ9.IwRJA-aBRTYLjcMwoIdYhUd8l0qtIJBbEUG1TYQ1GMIGgjbEINPNJqo40MMeaYEjZEacA0w2hjXa7pmLokRWAQ';
 
-export function initializeDatabase() {
+let dbDriver;
 
-  /* ─────────────────────────────────────────
-     1. جداول موجودة (لا تُغيَّر)
-  ───────────────────────────────────────── */
-  db.exec(`
+if (tursoUrl && tursoToken) {
+  console.log('Using Turso Cloud Database:', tursoUrl);
+  const turso = createClient({ url: tursoUrl, authToken: tursoToken });
+  dbDriver = {
+    isTurso: true,
+    prepare: (sql) => ({
+      get: async (...args) => {
+        const flatArgs = args.flat();
+        const res = await turso.execute({ sql, args: flatArgs.map(a => a === undefined ? null : a) });
+        return res.rows[0];
+      },
+      all: async (...args) => {
+        const flatArgs = args.flat();
+        const res = await turso.execute({ sql, args: flatArgs.map(a => a === undefined ? null : a) });
+        return res.rows;
+      },
+      run: async (...args) => {
+        const flatArgs = args.flat();
+        const res = await turso.execute({ sql, args: flatArgs.map(a => a === undefined ? null : a) });
+        return { lastInsertRowid: res.lastInsertRowid ? Number(res.lastInsertRowid) : 0, changes: res.rowsAffected };
+      }
+    }),
+    exec: async (sql) => {
+      return await turso.executeMultiple(sql);
+    }
+  };
+} else {
+  console.log('Using Local SQLite Database:', dbPath);
+  const localDb = new Database(dbPath);
+  localDb.pragma('journal_mode = WAL');
+  dbDriver = {
+    isTurso: false,
+    prepare: (sql) => ({
+      get: (...args) => localDb.prepare(sql).get(...args.flat()),
+      all: (...args) => localDb.prepare(sql).all(...args.flat()),
+      run: (...args) => localDb.prepare(sql).run(...args.flat()),
+    }),
+    exec: (sql) => localDb.exec(sql)
+  };
+}
+
+export const db = dbDriver;
+
+export async function initializeDatabase() {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       full_name TEXT NOT NULL,
@@ -85,29 +126,7 @@ export function initializeDatabase() {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(created_by) REFERENCES users(id)
     );
-  `);
 
-  const attendanceSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='attendance'").get();
-  if (attendanceSchema && !attendanceSchema.sql.includes("CHECK(status IN ('present','absent','hourly','daily','count'))")) {
-    db.exec(`
-      ALTER TABLE attendance RENAME TO attendance_old;
-      CREATE TABLE attendance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        worker_name TEXT NOT NULL,
-        attendance_date TEXT NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('present','absent','hourly','daily','count')),
-        session_id INTEGER,
-        created_by INTEGER NOT NULL,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(created_by) REFERENCES users(id)
-      );
-      INSERT INTO attendance (id, worker_name, attendance_date, status, session_id, created_by, created_at)
-        SELECT id, worker_name, attendance_date, status, session_id, created_by, created_at FROM attendance_old;
-      DROP TABLE attendance_old;
-    `);
-  }
-
-  db.exec(`
     CREATE TABLE IF NOT EXISTS category_usage (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category_id INTEGER NOT NULL,
@@ -121,10 +140,6 @@ export function initializeDatabase() {
       FOREIGN KEY(category_id) REFERENCES categories(id),
       FOREIGN KEY(created_by) REFERENCES users(id)
     );
-
-    /* ─────────────────────────────────────────
-       2. جداول جديدة
-    ───────────────────────────────────────── */
 
     CREATE TABLE IF NOT EXISTS sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,146 +200,4 @@ export function initializeDatabase() {
       UNIQUE(worker_name, target_date)
     );
   `);
-
-  // Migrate users check constraint if old
-  const usersSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
-  if (usersSchema && usersSchema.sql && !usersSchema.sql.includes('inspection_coordinator')) {
-    try {
-      db.exec(`
-        ALTER TABLE users RENAME TO users_old;
-        CREATE TABLE users (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          full_name TEXT NOT NULL,
-          username TEXT NOT NULL UNIQUE,
-          password_hash TEXT NOT NULL,
-          role TEXT NOT NULL CHECK(role IN ('admin','coordinator','host','inspection_coordinator')),
-          two_factor_secret TEXT,
-          two_factor_enabled INTEGER NOT NULL DEFAULT 0,
-          is_active INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        INSERT INTO users (id, full_name, username, password_hash, role, two_factor_secret, two_factor_enabled, is_active, created_at)
-          SELECT id, full_name, username, password_hash, role, two_factor_secret, two_factor_enabled, is_active, created_at FROM users_old;
-        DROP TABLE users_old;
-      `);
-    } catch (e) {
-      console.log('Users migration skipped/already updated');
-    }
-  }
-
-  // Fix foreign keys referencing users_old from past ALTER TABLE
-  try {
-    const tablesToFix = ['category_usage', 'shift_records', 'box_allocations', 'daily_work_records', 'attendance', 'inspection_records', 'inspection_targets'];
-    db.exec('PRAGMA foreign_keys = OFF;');
-    for (const table of tablesToFix) {
-      const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table);
-      if (row && row.sql && row.sql.includes('users_old')) {
-        const newSql = row.sql.replace(/"users_old"/g, 'users').replace(/users_old/g, 'users');
-        db.exec(`
-          ALTER TABLE ${table} RENAME TO ${table}_temp;
-          ${newSql};
-          INSERT INTO ${table} SELECT * FROM ${table}_temp;
-          DROP TABLE ${table}_temp;
-        `);
-      }
-    }
-    db.exec('PRAGMA foreign_keys = ON;');
-  } catch (e) {
-    console.log('Foreign key cleanup note:', e.message);
-  }
-
-  /* ─────────────────────────────────────────
-     3. Migrations — إضافة أعمدة مفقودة
-  ───────────────────────────────────────── */
-  function addColumnIfMissing(table, column, definition) {
-    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
-    if (!cols.includes(column)) {
-      db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
-    }
-  }
-
-  // users
-  addColumnIfMissing('users', 'two_factor_secret',  'TEXT');
-  addColumnIfMissing('users', 'two_factor_enabled', 'INTEGER NOT NULL DEFAULT 0');
-
-  // hourly_workers
-  addColumnIfMissing('hourly_workers', 'notes', "TEXT DEFAULT ''");
-
-  // جداول تحتاج session_id
-  ['shift_records','box_allocations','attendance','category_usage'].forEach(t => {
-    addColumnIfMissing(t, 'session_id', 'INTEGER');
-  });
-
-  // جداول تحتاج approved
-  ['category_usage', 'box_allocations', 'daily_work_records'].forEach(t => {
-    addColumnIfMissing(t, 'approved', 'INTEGER NOT NULL DEFAULT 1');
-  });
-
-  addColumnIfMissing('daily_work_records', 'category_id', 'INTEGER');
-
-  /* ─────────────────────────────────────────
-     4. بيانات أولية
-  ───────────────────────────────────────── */
-
-  // مستخدم admin
-  const adminUser = db.prepare('SELECT * FROM users WHERE username = ?').get('admin');
-  if (!adminUser) {
-    db.prepare(`
-      INSERT INTO users (full_name, username, password_hash, role, is_active)
-      VALUES (?, ?, ?, ?, 1)
-    `).run('المسؤولة', 'admin', bcrypt.hashSync('admin123', 10), 'admin');
-  }
-
-  // منسق تجريبي
-  const coordUser = db.prepare('SELECT * FROM users WHERE username = ?').get('coordinator1');
-  if (!coordUser) {
-    db.prepare(`
-      INSERT INTO users (full_name, username, password_hash, role, is_active)
-      VALUES (?, ?, ?, ?, 1)
-    `).run('منسق تجريبي', 'coordinator1', bcrypt.hashSync('coord123', 10), 'coordinator');
-  } else if (coordUser.role !== 'coordinator') {
-    db.prepare('UPDATE users SET role = ? WHERE username = ?').run('coordinator', 'coordinator1');
-  }
-
-  // مضيف تجريبي
-  const hostUser = db.prepare('SELECT * FROM users WHERE username = ?').get('host1');
-  if (!hostUser) {
-    db.prepare(`
-      INSERT INTO users (full_name, username, password_hash, role, is_active)
-      VALUES (?, ?, ?, ?, 1)
-    `).run('مضيف تجريبي', 'host1', bcrypt.hashSync('host123', 10), 'host');
-  }
-
-  // أصناف أولية
-  const catCount = db.prepare('SELECT COUNT(*) as c FROM categories').get();
-  if (!catCount.c) {
-    db.prepare(`
-      INSERT INTO categories (name, unit_price, unit_type, is_active) VALUES
-      ('بندورة', 2.5, 'كغم', 1),
-      ('خيار',  1.75, 'كغم', 1),
-      ('فلفل',   3.0, 'كغم', 1)
-    `).run();
-  }
-
-  // عمال ساعة أوليين
-  const hwCount = db.prepare('SELECT COUNT(*) as c FROM hourly_workers').get();
-  if (!hwCount.c) {
-    db.prepare(`
-      INSERT INTO hourly_workers (full_name, hourly_rate, is_active) VALUES
-      ('أحمد', 15, 1),
-      ('سامي', 12.5, 1)
-    `).run();
-  }
-
-  /* ─────────────────────────────────────────
-     5. جلسة افتراضية إن لم تكن موجودة
-  ───────────────────────────────────────── */
-  const sessionCount = db.prepare('SELECT COUNT(*) as c FROM sessions').get();
-  if (!sessionCount.c) {
-    const adminId = db.prepare('SELECT id FROM users WHERE username = ?').get('admin')?.id || 1;
-    db.prepare(`
-      INSERT INTO sessions (name, status, notes, created_by)
-      VALUES ('الجلسة الأولى', 'active', '', ?)
-    `).run(adminId);
-  }
 }
