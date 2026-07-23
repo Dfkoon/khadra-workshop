@@ -77,6 +77,11 @@ const Icons = {
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             <polyline points="9 22 9 12 15 12 15 22" />
         </svg>
+    ),
+    refresh: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.3L2.5 16" />
+        </svg>
     )
 };
 
@@ -85,6 +90,7 @@ function AppLayout() {
     const navigate = useNavigate();
     const location = useLocation();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
     if (!user) return <Navigate to="/login" replace />;
 
@@ -105,6 +111,11 @@ function AppLayout() {
     const visibleItems = navItems.filter(n => n.roles.includes(user.role));
 
     function handleLogout() { logout(); navigate('/login'); }
+
+    function handlePageRefresh() {
+        setRefreshing(true);
+        window.location.reload();
+    }
 
     function roleLabel(r) {
         if (r === 'admin') return 'مسؤولة';
@@ -166,6 +177,14 @@ function AppLayout() {
                                 </span>
                             </div>
                         </div>
+                        <button 
+                            className="btn btn-outline" 
+                            style={{ width: '100%', marginBottom: '8px', gap: '8px', fontSize: '13px', background: 'rgba(255,255,255,0.08)', color: '#fff', borderColor: 'rgba(255,255,255,0.15)' }} 
+                            onClick={handlePageRefresh}
+                        >
+                            {Icons.refresh}
+                            تحديث البيانات
+                        </button>
                         <button className="logout-btn" onClick={handleLogout}>
                             {Icons.logout}
                             تسجيل الخروج
@@ -177,12 +196,34 @@ function AppLayout() {
             {/* ── Main content ── */}
             <div className="main-content">
                 {/* Mobile topbar */}
-                <div className="mobile-topbar">
-                    <button className="hamburger" onClick={() => setIsSidebarOpen(s => !s)} aria-label="Toggle menu">
-                        {Icons.menu}
+                <div className="mobile-topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button className="hamburger" onClick={() => setIsSidebarOpen(s => !s)} aria-label="Toggle menu">
+                            {Icons.menu}
+                        </button>
+                        <div className="mobile-brand">مشغل أبو يوسف</div>
+                    </div>
+                    <button 
+                        onClick={handlePageRefresh}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            background: 'var(--surface-2)',
+                            border: '1px solid var(--line)',
+                            color: 'var(--ink)',
+                            fontSize: '13px',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        <span style={{ display: 'inline-block', transform: refreshing ? 'rotate(360deg)' : 'none', transition: 'transform 0.5s' }}>
+                            {Icons.refresh}
+                        </span>
+                        تحديث
                     </button>
-                    <div className="mobile-brand">مشغل أبو يوسف</div>
-                    <div className="mobile-page-name">{currentPage}</div>
                 </div>
 
                 <Routes>
