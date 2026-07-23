@@ -564,12 +564,25 @@ export default function Boxes() {
                                     <div className="boxes-form-grid">
                                         <div className="field">
                                             <label>اسم العامل</label>
-                                            <input
+                                            <select
                                                 value={inspWorkerName}
                                                 onChange={e => setInspWorkerName(e.target.value)}
-                                                placeholder="أدخل أو ابحث عن اسم العامل"
-                                                list="workers-list"
-                                            />
+                                                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}
+                                            >
+                                                <option value="">-- اختر اسم العامل --</option>
+                                                {inspectionTargets.map(t => (
+                                                    <option key={t.id} value={t.worker_name}>
+                                                        {t.worker_name} (الهدف: {t.target_boxes} بكس)
+                                                    </option>
+                                                ))}
+                                                {catWorkers.filter(w => !inspectionTargets.some(t => t.worker_name === w.full_name)).length > 0 && (
+                                                    <optgroup label="باقي العمال">
+                                                        {catWorkers.filter(w => !inspectionTargets.some(t => t.worker_name === w.full_name)).map(w => (
+                                                            <option key={w.id} value={w.full_name}>{w.full_name}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                )}
+                                            </select>
                                         </div>
                                         <div className="field">
                                             <label>العدد (البكس)</label>
@@ -579,25 +592,6 @@ export default function Boxes() {
                                                 onChange={e => setInspBoxesCount(e.target.value)}
                                                 placeholder="0"
                                             />
-                                        </div>
-                                        <div className="field">
-                                            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span>وقت البدء</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const now = new Date();
-                                                        setInspStartTime(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
-                                                    }}
-                                                    style={{
-                                                        background: 'none', border: 'none', color: 'var(--leaf)',
-                                                        fontSize: '11px', fontWeight: '700', cursor: 'pointer', padding: 0
-                                                    }}
-                                                >
-                                                    الوقت الحالي
-                                                </button>
-                                            </label>
-                                            <input type="time" value={inspStartTime} onChange={e => setInspStartTime(e.target.value)} />
                                         </div>
                                         <div className="field btn-submit-wrapper" style={{ margin: 0 }}>
                                             <button className="btn btn-success" style={{ width: '100%' }} onClick={submitInspectionRecord}>
