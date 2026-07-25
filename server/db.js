@@ -7,8 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const dbPath     = path.join(__dirname, '..', 'khadra.db');
 
-const tursoUrl = process.env.TURSO_DATABASE_URL || 'https://khadra-db-hussienaldayyat2022-ops.aws-eu-west-1.turso.io';
-const tursoToken = process.env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODQ3ODg4NjYsImlkIjoiMDE5ZjhkYjMtMWUwMS03YmQ4LWE2ZmQtYjBhMzU2MDMxM2Q2Iiwia2lkIjoiQkxoQjQ4akVoMlRDRnVmdXJUMVpBUUsyQjk3V3YtNFlRejREV3h2OEkzUSIsInJpZCI6ImVkMjhhNjU0LWY2ODItNDBjMy05MzE5LWRmOGNkMzFhN2YxZSJ9.IwRJA-aBRTYLjcMwoIdYhUd8l0qtIJBbEUG1TYQ1GMIGgjbEINPNJqo40MMeaYEjZEacA0w2hjXa7pmLokRWAQ';
+const tursoUrl = process.env.TURSO_DATABASE_URL || '';
+const tursoToken = process.env.TURSO_AUTH_TOKEN || '';
 
 let dbDriver;
 
@@ -35,7 +35,14 @@ if (tursoUrl && tursoToken) {
       }
     }),
     exec: async (sql) => {
-      return await turso.executeMultiple(sql);
+      const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
+      for (const stmt of stmts) {
+        try {
+          await turso.execute(stmt);
+        } catch (e) {
+          console.warn('[Turso exec warning]', e.message);
+        }
+      }
     }
   };
 } else {
@@ -164,14 +171,18 @@ export async function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS daily_work_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       worker_id INTEGER NOT NULL,
+      category_id INTEGER,
       work_date TEXT NOT NULL,
       boxes_count INTEGER NOT NULL DEFAULT 0,
+      unit_price REAL NOT NULL DEFAULT 0,
       total_pay REAL NOT NULL DEFAULT 0,
       notes TEXT DEFAULT '',
       session_id INTEGER,
+      approved INTEGER NOT NULL DEFAULT 1,
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(worker_id) REFERENCES daily_workers(id),
+      FOREIGN KEY(category_id) REFERENCES categories(id),
       FOREIGN KEY(created_by) REFERENCES users(id)
     );
 
@@ -202,14 +213,14 @@ export async function initializeDatabase() {
       worker_name TEXT NOT NULL,
       target_boxes INTEGER NOT NULL,
       target_date TEXT NOT NULL,
-      category_name TEXT DEFAULT '',
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(created_by) REFERENCES users(id),
       UNIQUE(worker_name, target_date)
     );
-
-    try { await db.prepare("ALTER TABLE inspection_targets ADD COLUMN category_name TEXT DEFAULT ''").run(); } catch(e) {}
-    try { await db.prepare("ALTER TABLE inspection_records ADD COLUMN category_name TEXT DEFAULT ''").run(); } catch(e) {}
   `);
+
+  try { await db.exec(`ALTER TABLE daily_work_records ADD COLUMN category_id INTEGER REFERENCES categories(id)`); } catch (e) {}
+  try { await db.exec(`ALTER TABLE daily_work_records ADD COLUMN unit_price REAL DEFAULT 0`); } catch (e) {}
+  try { await db.exec(`ALTER TABLE daily_work_records ADD COLUMN approved INTEGER DEFAULT 1`); } catch (e) {}
 }

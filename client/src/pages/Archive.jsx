@@ -8,7 +8,6 @@ function fmt(n) { return Number(n || 0).toFixed(2); }
 
 export default function Archive() {
     const { user } = useAuth();
-    const isAdmin = user?.role === 'admin';
 
     const [sessions, setSessions] = useState([]);
     const [selectedSessionId, setSelectedSessionId] = useState('');
@@ -16,7 +15,10 @@ export default function Archive() {
 
     const [hourlyRecords, setHourlyRecords] = useState([]);
     const [dailyRecords, setDailyRecords] = useState([]);
-    const [totals, setTotals] = useState({ hourly_pay: 0, daily_pay: 0, grand_total: 0 });
+    const [usageRecords, setUsageRecords] = useState([]);
+    const [inspectionRecords, setInspectionRecords] = useState([]);
+    const [attendanceRecords, setAttendanceRecords] = useState([]);
+    const [totals, setTotals] = useState({ hourly_pay: 0, daily_pay: 0, usage_pay: 0, grand_total: 0 });
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -30,6 +32,7 @@ export default function Archive() {
             const list = await api.getSessions();
             setSessions(list || []);
         } catch (e) {
+            console.error('Error loading sessions:', e);
             toast.error('فشل تحميل الجلسات');
         }
     }
@@ -40,8 +43,12 @@ export default function Archive() {
             const res = await api.getArchiveDaily(dateVal, sessionVal);
             setHourlyRecords(res.hourly_records || []);
             setDailyRecords(res.daily_records || []);
-            setTotals(res.totals || { hourly_pay: 0, daily_pay: 0, grand_total: 0 });
+            setUsageRecords(res.usage_records || []);
+            setInspectionRecords(res.inspection_records || []);
+            setAttendanceRecords(res.attendance_records || []);
+            setTotals(res.totals || { hourly_pay: 0, daily_pay: 0, usage_pay: 0, grand_total: 0 });
         } catch (e) {
+            console.error('Error fetching archive:', e);
             toast.error('فشل تحميل بيانات الأرشيف');
         } finally {
             setLoading(false);
@@ -64,6 +71,16 @@ export default function Archive() {
         window.print();
     }
 
+    const dailyColumns = [
+        { field: 'worker_name', label: 'العامل' },
+        { field: 'category_name', label: 'نوع الصنف', render: r => r.category_name || 'عام / غير محدد' },
+        { field: 'work_date', label: 'التاريخ' },
+        { field: 'boxes_count', label: 'عدد البكس', render: r => `${r.boxes_count} بكس` },
+        { field: 'unit_price', label: 'سعر البكسة', render: r => `${fmt(r.unit_price || r.daily_rate)} د.أ` },
+        { field: 'total_pay', label: 'الأجر المتوقع', render: r => `${fmt(r.total_pay)} د.أ` },
+        { field: 'notes', label: 'ملاحظات', render: r => r.notes || r.worker_notes || '—' }
+    ];
+
     const hourlyColumns = [
         { field: 'worker_name', label: 'الاسم' },
         { field: 'shift_date', label: 'التاريخ' },
@@ -75,24 +92,36 @@ export default function Archive() {
         { field: 'worker_notes', label: 'الملاحظات' }
     ];
 
-    const dailyColumns = [
-        { field: 'worker_name', label: 'الاسم' },
-        { field: 'work_date', label: 'التاريخ' },
-        { field: 'boxes_count', label: 'عدد البكسات', render: r => `${r.boxes_count} بكسة` },
-        { field: 'daily_rate', label: 'أجر اليوم', render: r => `${fmt(r.daily_rate)} د.أ` },
-        { field: 'total_pay', label: 'إجمالي الأجر', render: r => `${fmt(r.total_pay)} د.أ` },
-        { field: 'notes', label: 'ملاحظات اليوم', render: r => r.notes || r.worker_notes || 'لا يوجد' }
+    const usageColumns = [
+        { field: 'worker_name', label: 'العامل' },
+        { field: 'category_name', label: 'الصنف', render: r => r.category_name || 'صنف محذوف' },
+        { field: 'quantity', label: 'عدد البكس', render: r => `${r.quantity} بكس` },
+        { field: 'total_price', label: 'الإجمالي (د.أ)', render: r => `${fmt(r.total_price)} د.أ` },
+        { field: 'entry_date', label: 'التاريخ' }
+    ];
+
+    const inspectionColumns = [
+        { field: 'worker_name', label: 'عامل الفحص' },
+        { field: 'boxes_count', label: 'العدد المنجز/المخصم', render: r => `${r.boxes_count} بكس` },
+        { field: 'created_at', label: 'الوقت', render: r => r.created_at ? new Date(r.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '—' },
+        { field: 'work_date', label: 'التاريخ' }
+    ];
+
+    const attendanceColumns = [
+        { field: 'worker_name', label: 'اسم العامل' },
+        { field: 'status', label: 'الحالة', render: r => r.status === 'present' ? 'حاضر' : r.status === 'absent' ? 'غائب' : r.status },
+        { field: 'attendance_date', label: 'تاريخ الحضور' }
     ];
 
     return (
         <>
             <div className="page-header">
-                <h2 className="page-title">الأرشيف اليومي</h2>
-                <p className="page-sub">تتبع إنتاجية العمال والأجور اليومية لعمال الأعداد وعمال الساعة بشكل مستقل</p>
+                <h2 className="page-title">الأرشيف اليومي والجلسات</h2>
+                <p className="page-sub">تتبع كافة أرشفة الصفحات والمعلومات للجلسات والتوارخ المحددة</p>
             </div>
 
             <div className="section no-print">
-                <h3>فلترة وتصفية السجلات</h3>
+                <h3>فلترة وتصفية الأرشيف الشامل</h3>
                 <div className="form-row">
                     <div className="field">
                         <label>تصفية بحسب التاريخ اليومي</label>
@@ -127,7 +156,7 @@ export default function Archive() {
             {/* Totals Summary */}
             <div className="stat-row">
                 <div className="stat-card leaf">
-                    <div className="label">أجور عمال الأعداد</div>
+                    <div className="label">أجور عمال الأعداد (البكس)</div>
                     <div className="value">{fmt(totals.daily_pay)}</div>
                     <div className="stat-unit">دينار أردني</div>
                 </div>
@@ -137,36 +166,72 @@ export default function Archive() {
                     <div className="stat-unit">دينار أردني</div>
                 </div>
                 <div className="stat-card tomato">
-                    <div className="label">الإجمالي الكلي للأجور</div>
+                    <div className="label">الإجمالي الكلي للعمالة</div>
                     <div className="value">{fmt(totals.grand_total)}</div>
                     <div className="stat-unit">دينار أردني</div>
                 </div>
             </div>
 
-            <div className="no-print" style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="btn btn-primary" onClick={handlePrint}>طباعة التقرير الكامل للأرشيف</button>
+            <div className="no-print" style={{ marginBottom: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button className="btn btn-primary" onClick={handlePrint}>طباعة تقرير الأرشيف الشامل</button>
             </div>
 
-            {/* Daily Workers Table */}
+            {/* Section 1: Daily Counts Workers Table */}
             <PrintableDatabaseTable
-                title="أرشيف عمال الأعداد بالبكس"
-                subtitle={selectedDate ? `التقرير اليومي لتاريخ: ${selectedDate}` : `تقرير الجلسة المحددة`}
+                title="أرشيف عمال الأعداد بالأصناف والبكس"
+                subtitle={selectedDate ? `تاريخ: ${selectedDate}` : `جلسة مؤرشفة`}
                 columns={dailyColumns}
                 rows={dailyRecords}
                 loading={loading}
-                noDataMessage="لا توجد سجلات عمال أعداد مؤرشفة للفلتر المحدد"
+                noDataMessage="لا توجد سجلات عمال أعداد مؤرشفة"
             />
 
             <div style={{ margin: '32px 0' }}></div>
 
-            {/* Hourly Workers Table */}
+            {/* Section 2: Hourly Workers Table */}
             <PrintableDatabaseTable
-                title="أرشيف عمال الساعة"
-                subtitle={selectedDate ? `التقرير اليومي لتاريخ: ${selectedDate}` : `تقرير الجلسة المحددة`}
+                title="أرشيف عمال الساعة والورديات"
+                subtitle={selectedDate ? `تاريخ: ${selectedDate}` : `جلسة مؤرشفة`}
                 columns={hourlyColumns}
                 rows={hourlyRecords}
                 loading={loading}
-                noDataMessage="لا توجد سجلات عمال ساعة مؤرشفة للفلتر المحدد"
+                noDataMessage="لا توجد سجلات عمال ساعة مؤرشفة"
+            />
+
+            <div style={{ margin: '32px 0' }}></div>
+
+            {/* Section 3: Category Usage Table */}
+            <PrintableDatabaseTable
+                title="أرشيف الأصناف والبوكسات (استخدام البكس)"
+                subtitle={selectedDate ? `تاريخ: ${selectedDate}` : `جلسة مؤرشفة`}
+                columns={usageColumns}
+                rows={usageRecords}
+                loading={loading}
+                noDataMessage="لا توجد سجلات أصناف وبوكسات مؤرشفة"
+            />
+
+            <div style={{ margin: '32px 0' }}></div>
+
+            {/* Section 4: Inspection Records Table */}
+            <PrintableDatabaseTable
+                title="أرشيف إنجاز وتخصيم عمال الفحص"
+                subtitle={selectedDate ? `تاريخ: ${selectedDate}` : `جلسة مؤرشفة`}
+                columns={inspectionColumns}
+                rows={inspectionRecords}
+                loading={loading}
+                noDataMessage="لا توجد سجلات فحص مؤرشفة"
+            />
+
+            <div style={{ margin: '32px 0' }}></div>
+
+            {/* Section 5: Attendance Table */}
+            <PrintableDatabaseTable
+                title="أرشيف سجلات الحضور والغياب"
+                subtitle={selectedDate ? `تاريخ: ${selectedDate}` : `جلسة مؤرشفة`}
+                columns={attendanceColumns}
+                rows={attendanceRecords}
+                loading={loading}
+                noDataMessage="لا توجد سجلات حضور وغياب مؤرشفة"
             />
         </>
     );

@@ -9,8 +9,29 @@ import { generateSecret, verify, generate } from 'otplib';
 import { db, initializeDatabase } from './db.js';
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://khadra-workshop.web.app',
+    'https://khadra-workshop.firebaseapp.com',
+    'https://khadra-workshop-1.onrender.com',
+    /^http:\/\/localhost(:\d+)?$/,
+    /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+  ],
+  credentials: true,
+}));
 app.use(express.json());
+
+// Debug: log incoming Authorization header for API requests when DEBUG_AUTH_HEADERS=1
+if (process.env.DEBUG_AUTH_HEADERS === '1') {
+  app.use('/api', (req, res, next) => {
+    try {
+      console.debug('[DEBUG_AUTH_HEADERS]', req.method, req.path, 'AuthHeader:', req.headers.authorization);
+    } catch (e) {
+      console.debug('[DEBUG_AUTH_HEADERS] Error reading headers', e && e.message);
+    }
+    next();
+  });
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -125,10 +146,19 @@ app.post('/api/auth/verify-2fa', authenticatePendingToken, async (req, res) => {
       return res.status(400).json({ error: 'المصادقة الثنائية غير مفعلة لهذا المستخدم' });
 
     const codeStr = String(code).trim();
-    if (codeStr.length !== 6) return res.status(401).json({ error: 'رمز المصادقة يجب أن يتكون من 6 أرقام' });
+    // validate exactly 6 digits
+    if (!/^\d{6}$/.test(codeStr)) {
+      return res.status(401).json({ error: 'رمز المصادقة يجب أن يتكون من 6 أرقام' });
+    }
 
-    const result = await verify({ token: codeStr, secret: user.two_factor_secret });
-    if (!result?.valid) return res.status(401).json({ error: 'رمز المصادقة الثنائية غير صحيح' });
+    // protect the verify call with try/catch to avoid unexpected library errors crashing the server
+    try {
+      const result = await verify({ token: codeStr, secret: user.two_factor_secret });
+      if (!result?.valid) return res.status(401).json({ error: 'رمز المصادقة الثنائية غير صحيح' });
+    } catch (err) {
+      console.error('2FA verify error (unexpected):', err && err.stack ? err.stack : err);
+      return res.status(400).json({ error: 'خطأ أثناء التحقق من رمز المصادقة' });
+    }
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '8h' });
     return res.json({ token, user: { id: user.id, username: user.username, full_name: user.full_name, role: user.role } });
@@ -143,7 +173,7 @@ app.get('/api/auth/me', authenticateToken, (req, res) => res.json({ user: req.us
 /* ═══════════════════════════════════════════
    SESSIONS
 ═══════════════════════════════════════════ */
-app.get('/api/sessions', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/sessions', authenticateToken, async (req, res) => {
   const rows = await db.prepare('SELECT * FROM sessions ORDER BY id DESC').all();
   res.json(rows);
 });
@@ -415,10 +445,16 @@ app.delete('/api/daily-workers/:id', authenticateToken, requireAdmin, async (req
 ═══════════════════════════════════════════ */
 app.get('/api/daily-work-records', authenticateToken, async (req, res) => {
   const { date, session_id } = req.query;
-  const base = 'SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate FROM daily_work_records dwr JOIN daily_workers dw ON dwr.worker_id = dw.id';
+  const base = `
+    SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate,
+           c.name as category_name, c.unit_price as current_category_unit_price
+    FROM daily_work_records dwr
+    JOIN daily_workers dw ON dwr.worker_id = dw.id
+    LEFT JOIN categories c ON dwr.category_id = c.id
+  `;
   let rows;
   if (date)
-    rows = await db.prepare(`${base} WHERE dwr.work_date = ? AND dwr.approved = 1 ORDER BY dwr.id`).all(date);
+    rows = await db.prepare(`${base} WHERE dwr.work_date = ? AND dwr.approved = 1 ORDER BY dwr.id DESC`).all(date);
   else if (session_id)
     rows = await db.prepare(`${base} WHERE dwr.session_id = ? AND dwr.approved = 1 ORDER BY dwr.work_date DESC, dwr.id DESC`).all(session_id);
   else
@@ -427,31 +463,62 @@ app.get('/api/daily-work-records', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/daily-work-records', authenticateToken, requireCoordinatorOrAdmin, async (req, res) => {
-  const { worker_id, work_date, boxes_count, notes } = req.body;
+  const { worker_id, category_id, work_date, boxes_count, notes } = req.body;
   const worker = await db.prepare('SELECT * FROM daily_workers WHERE id = ?').get(worker_id);
   if (!worker) return res.status(404).json({ error: 'العامل غير موجود' });
-  const date    = work_date || new Date().toISOString().slice(0, 10);
-  const boxes   = Number(boxes_count || 0);
-  const total_pay = boxes * Number(worker.daily_rate);
-  const session = await activeSession();
-  const approved = req.user.role === 'admin' ? 1 : 0;
-  const result = await db.prepare(
-    'INSERT INTO daily_work_records (worker_id, work_date, boxes_count, total_pay, notes, session_id, approved, created_by) VALUES (?,?,?,?,?,?,?,?)'
-  ).run(worker_id, date, boxes, total_pay, notes || '', session?.id ?? null, approved, req.user.id);
-  const created = await db.prepare('SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate FROM daily_work_records dwr JOIN daily_workers dw ON dwr.worker_id = dw.id WHERE dwr.id = ?').get(result.lastInsertRowid);
+
+  let unit_price = 0;
+  if (category_id) {
+    const cat = await db.prepare('SELECT unit_price FROM categories WHERE id = ?').get(category_id);
+    if (cat) unit_price = Number(cat.unit_price || 0);
+  }
+
+  const date      = work_date || new Date().toISOString().slice(0, 10);
+  const boxes     = Number(boxes_count || 0);
+  const total_pay = unit_price > 0 ? (boxes * unit_price) : (boxes * Number(worker.daily_rate || 0));
+  const session   = await activeSession();
+  const approved  = req.user.role === 'admin' ? 1 : 0;
+  const result    = await db.prepare(
+    'INSERT INTO daily_work_records (worker_id, category_id, work_date, boxes_count, unit_price, total_pay, notes, session_id, approved, created_by) VALUES (?,?,?,?,?,?,?,?,?,?)'
+  ).run(worker_id, category_id || null, date, boxes, unit_price, total_pay, notes || '', session?.id ?? null, approved, req.user.id);
+  const created   = await db.prepare(`
+    SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate,
+           c.name as category_name
+    FROM daily_work_records dwr
+    JOIN daily_workers dw ON dwr.worker_id = dw.id
+    LEFT JOIN categories c ON dwr.category_id = c.id
+    WHERE dwr.id = ?
+  `).get(result.lastInsertRowid);
   res.status(201).json(created);
 });
 
 app.put('/api/daily-work-records/:id', authenticateToken, requireCoordinatorOrAdmin, async (req, res) => {
-  const { boxes_count, notes } = req.body;
+  const { worker_id, category_id, boxes_count, notes } = req.body;
   const row = await db.prepare('SELECT * FROM daily_work_records WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'السجل غير موجود' });
-  const worker = await db.prepare('SELECT daily_rate FROM daily_workers WHERE id = ?').get(row.worker_id);
+
+  const targetWorkerId = worker_id ? Number(worker_id) : row.worker_id;
+  const targetCategoryId = category_id !== undefined ? (category_id ? Number(category_id) : null) : row.category_id;
   const new_boxes = Number(boxes_count ?? row.boxes_count);
-  const total_pay = new_boxes * Number(worker.daily_rate);
-  await db.prepare('UPDATE daily_work_records SET boxes_count=?, total_pay=?, notes=? WHERE id=?')
-    .run(new_boxes, total_pay, notes ?? row.notes, req.params.id);
-  const updated = await db.prepare('SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate FROM daily_work_records dwr JOIN daily_workers dw ON dwr.worker_id = dw.id WHERE dwr.id = ?').get(req.params.id);
+
+  let unit_price = row.unit_price || 0;
+  if (targetCategoryId) {
+    const cat = await db.prepare('SELECT unit_price FROM categories WHERE id = ?').get(targetCategoryId);
+    if (cat) unit_price = Number(cat.unit_price || 0);
+  }
+  const worker = await db.prepare('SELECT daily_rate FROM daily_workers WHERE id = ?').get(targetWorkerId);
+  const total_pay = unit_price > 0 ? (new_boxes * unit_price) : (new_boxes * Number(worker?.daily_rate || 0));
+
+  await db.prepare('UPDATE daily_work_records SET worker_id=?, category_id=?, boxes_count=?, unit_price=?, total_pay=?, notes=? WHERE id=?')
+    .run(targetWorkerId, targetCategoryId, new_boxes, unit_price, total_pay, notes ?? row.notes, req.params.id);
+  const updated = await db.prepare(`
+    SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate,
+           c.name as category_name
+    FROM daily_work_records dwr
+    JOIN daily_workers dw ON dwr.worker_id = dw.id
+    LEFT JOIN categories c ON dwr.category_id = c.id
+    WHERE dwr.id = ?
+  `).get(req.params.id);
   res.json(updated);
 });
 
@@ -524,9 +591,7 @@ app.get('/api/inspection-records', authenticateToken, async (req, res) => {
 
 app.post('/api/inspection-records', authenticateToken, async (req, res) => {
   const { worker_name, boxes_count, work_date, start_time, notes } = req.body;
-  if (!worker_name || boxes_count === undefined || boxes_count === '' || parseInt(boxes_count) === 0) {
-    return res.status(400).json({ error: 'اسم العامل وعدد الأعداد مطلوبان' });
-  }
+  if (!worker_name || !boxes_count) return res.status(400).json({ error: 'اسم العامل وعدد الأعداد مطلوبان' });
   const date = work_date || new Date().toISOString().slice(0, 10);
   const session = await activeSession();
   const result = await db.prepare(`
@@ -535,14 +600,6 @@ app.post('/api/inspection-records', authenticateToken, async (req, res) => {
   `).run(worker_name, parseInt(boxes_count), date, start_time || null, notes || '', session?.id ?? null, req.user.id);
 
   res.status(201).json(await db.prepare('SELECT * FROM inspection_records WHERE id = ?').get(result.lastInsertRowid));
-});
-
-app.delete('/api/inspection-records/worker/:workerName', authenticateToken, requireAdmin, async (req, res) => {
-  const { workerName } = req.params;
-  const { date } = req.query;
-  const targetDate = date || new Date().toISOString().slice(0, 10);
-  await db.prepare('DELETE FROM inspection_records WHERE worker_name = ? AND work_date = ?').run(workerName, targetDate);
-  res.json({ success: true });
 });
 
 app.delete('/api/inspection-records/:id', authenticateToken, requireAdmin, async (req, res) => {
@@ -598,20 +655,19 @@ app.get('/api/inspection-targets', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/inspection-targets', authenticateToken, requireAdminOrInspectionCoordinator, async (req, res) => {
-  const { worker_name, target_boxes, target_date, category_name } = req.body;
+  const { worker_name, target_boxes, target_date } = req.body;
   if (!worker_name || !target_boxes) return res.status(400).json({ error: 'الاسم والعدد مطلوبان' });
   const date = target_date || new Date().toISOString().slice(0, 10);
-  const catName = category_name || '';
   try {
     const existing = await db.prepare('SELECT id FROM inspection_targets WHERE worker_name = ? AND target_date = ?').get(worker_name, date);
     if (existing) {
-      await db.prepare('UPDATE inspection_targets SET target_boxes = ?, category_name = ? WHERE id = ?').run(parseInt(target_boxes), catName, existing.id);
+      await db.prepare('UPDATE inspection_targets SET target_boxes = ? WHERE id = ?').run(parseInt(target_boxes), existing.id);
       res.json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(existing.id));
     } else {
       const result = await db.prepare(`
-        INSERT INTO inspection_targets (worker_name, target_boxes, target_date, category_name, created_by)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(worker_name, parseInt(target_boxes), date, catName, req.user.id);
+        INSERT INTO inspection_targets (worker_name, target_boxes, target_date, created_by)
+        VALUES (?, ?, ?, ?)
+      `).run(worker_name, parseInt(target_boxes), date, req.user.id);
       res.status(201).json(await db.prepare('SELECT * FROM inspection_targets WHERE id = ?').get(result.lastInsertRowid));
     }
   } catch (e) {
@@ -762,18 +818,26 @@ app.delete('/api/approvals/:type/:id/reject', authenticateToken, requireAdmin, a
 /* ═══════════════════════════════════════════
    ARCHIVE — الأرشيف اليومي
 ═══════════════════════════════════════════ */
-app.get('/api/archive/daily', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/archive/daily', authenticateToken, async (req, res) => {
   const { date, session_id } = req.query;
 
-  let hourlyFilter = '1=1', dailyFilter = '1=1';
-  const hParams = [], dParams = [];
+  let hourlyFilter = '1=1', dailyFilter = '1=1', usageFilter = '1=1', inspFilter = '1=1', attFilter = '1=1', allocFilter = '1=1';
+  const hParams = [], dParams = [], uParams = [], iParams = [], aParams = [], alParams = [];
 
   if (date) {
-    hourlyFilter = 'sr.shift_date = ?';   hParams.push(date);
-    dailyFilter  = 'dwr.work_date = ? AND dwr.approved = 1';   dParams.push(date);
+    hourlyFilter = 'sr.shift_date = ?'; hParams.push(date);
+    dailyFilter  = 'dwr.work_date = ? AND dwr.approved = 1'; dParams.push(date);
+    usageFilter  = 'cu.entry_date = ? AND cu.approved = 1'; uParams.push(date);
+    inspFilter   = 'ir.work_date = ? AND ir.approved = 1'; iParams.push(date);
+    attFilter    = 'att.attendance_date = ?'; aParams.push(date);
+    allocFilter  = 'ba.alloc_date = ? AND ba.approved = 1'; alParams.push(date);
   } else if (session_id) {
-    hourlyFilter = 'sr.session_id = ?';   hParams.push(session_id);
-    dailyFilter  = 'dwr.session_id = ? AND dwr.approved = 1';  dParams.push(session_id);
+    hourlyFilter = 'sr.session_id = ?'; hParams.push(session_id);
+    dailyFilter  = 'dwr.session_id = ? AND dwr.approved = 1'; dParams.push(session_id);
+    usageFilter  = 'cu.session_id = ? AND cu.approved = 1'; uParams.push(session_id);
+    inspFilter   = 'ir.session_id = ? AND ir.approved = 1'; iParams.push(session_id);
+    attFilter    = 'att.session_id = ?'; aParams.push(session_id);
+    allocFilter  = 'ba.session_id = ? AND ba.approved = 1'; alParams.push(session_id);
   }
 
   const hourlyRecords = await db.prepare(`
@@ -785,23 +849,60 @@ app.get('/api/archive/daily', authenticateToken, requireAdmin, async (req, res) 
   `).all(...hParams);
 
   const dailyRecords = await db.prepare(`
-    SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate, dw.notes as worker_notes
+    SELECT dwr.*, dw.full_name as worker_name, dw.daily_rate, dw.notes as worker_notes, c.name as category_name
     FROM daily_work_records dwr
     JOIN daily_workers dw ON dwr.worker_id = dw.id
+    LEFT JOIN categories c ON dwr.category_id = c.id
     WHERE ${dailyFilter}
     ORDER BY dwr.work_date DESC, dwr.worker_id
   `).all(...dParams);
 
+  const usageRecords = await db.prepare(`
+    SELECT cu.*, c.name as category_name, c.unit_price
+    FROM category_usage cu
+    LEFT JOIN categories c ON cu.category_id = c.id
+    WHERE ${usageFilter}
+    ORDER BY cu.entry_date DESC, cu.id DESC
+  `).all(...uParams);
+
+  const inspectionRecords = await db.prepare(`
+    SELECT ir.*
+    FROM inspection_records ir
+    WHERE ${inspFilter}
+    ORDER BY ir.work_date DESC, ir.id DESC
+  `).all(...iParams);
+
+  const attendanceRecords = await db.prepare(`
+    SELECT att.*
+    FROM attendance att
+    WHERE ${attFilter}
+    ORDER BY att.attendance_date DESC, att.id DESC
+  `).all(...aParams);
+
+  const boxAllocationRecords = await db.prepare(`
+    SELECT ba.*, hw.full_name as worker_name
+    FROM box_allocations ba
+    JOIN hourly_workers hw ON ba.worker_id = hw.id
+    WHERE ${allocFilter}
+    ORDER BY ba.alloc_date DESC, ba.id DESC
+  `).all(...alParams);
+
   const totalHourlyPay = hourlyRecords.reduce((s, r) => s + Number(r.total_pay || 0), 0);
   const totalDailyPay  = dailyRecords.reduce((s, r) => s + Number(r.total_pay || 0), 0);
+  const totalUsagePay  = usageRecords.reduce((s, r) => s + Number(r.total_price || 0), 0);
 
   res.json({
     hourly_records: hourlyRecords,
-    daily_records:  dailyRecords,
+    daily_records: dailyRecords,
+    usage_records: usageRecords,
+    inspection_records: inspectionRecords,
+    attendance_records: attendanceRecords,
+    box_allocation_records: boxAllocationRecords,
     totals: {
-      hourly_pay:   Number(totalHourlyPay.toFixed(2)),
-      daily_pay:    Number(totalDailyPay.toFixed(2)),
-      grand_total:  Number((totalHourlyPay + totalDailyPay).toFixed(2)),
+      hourly_pay: Number(totalHourlyPay.toFixed(2)),
+      daily_pay: Number(totalDailyPay.toFixed(2)),
+      usage_pay: Number(totalUsagePay.toFixed(2)),
+      grand_total: Number((totalHourlyPay + totalDailyPay).toFixed(2)),
     },
   });
 });

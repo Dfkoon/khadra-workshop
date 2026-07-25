@@ -56,9 +56,12 @@ function SessionPreviewModal({ session, onClose }) {
 
     if (!session) return null;
 
-    const hourly = data?.hourly_records || [];
-    const daily  = data?.daily_records  || [];
-    const totals = data?.totals         || {};
+    const hourly     = data?.hourly_records     || [];
+    const daily      = data?.daily_records      || [];
+    const usage      = data?.usage_records      || [];
+    const inspection = data?.inspection_records || [];
+    const attendance = data?.attendance_records || [];
+    const totals     = data?.totals             || {};
 
     return (
         <div
@@ -108,10 +111,10 @@ function SessionPreviewModal({ session, onClose }) {
                         </div>
                     ) : (
                         <div ref={printRef}>
-                            {/* Print Header (hidden in modal, shown in print) */}
+                            {/* Print Header */}
                             <h1 style={{ margin: '0 0 4px' }}>{session.name}</h1>
                             <p className="sub" style={{ color: 'var(--ink-soft)', fontSize: '13px', margin: '0 0 16px' }}>
-                                مشغل ابو يوسف — تقرير الجلسة
+                                تقرير أرشفة الجلسة الكاملة
                                 &nbsp;|&nbsp;
                                 {new Date(session.start_date).toLocaleString('ar-EG')}
                                 {session.end_date ? ` — ${new Date(session.end_date).toLocaleString('ar-EG')}` : ''}
@@ -130,15 +133,58 @@ function SessionPreviewModal({ session, onClose }) {
                                     <div className="stat-unit">دينار أردني</div>
                                 </div>
                                 <div className="stat-card tomato">
-                                    <div className="label">الإجمالي الكلي</div>
+                                    <div className="label">الإجمالي الكلي للأجور</div>
                                     <div className="value">{fmt(totals.grand_total)}</div>
                                     <div className="stat-unit">دينار أردني</div>
                                 </div>
                             </div>
 
-                            {/* Hourly Records Table */}
+                            {/* Daily Records Table */}
                             <h2 style={{ fontSize: '15px', margin: '0 0 8px', borderBottom: '2px solid var(--leaf)', paddingBottom: '4px' }}>
-                                سجلات عمال الساعة ({hourly.length} سجل)
+                                1. سجلات عمال الأعداد بالبكس والأصناف ({daily.length} سجل)
+                            </h2>
+                            {daily.length === 0 ? (
+                                <p style={{ color: 'var(--ink-soft)', fontSize: '13px', marginBottom: '24px' }}>لا توجد سجلات لعمال الأعداد في هذه الجلسة.</p>
+                            ) : (
+                                <div className="table-wrapper" style={{ marginBottom: '24px' }}>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>العامل</th>
+                                                <th>نوع الصنف</th>
+                                                <th>التاريخ</th>
+                                                <th>عدد البكس</th>
+                                                <th>سعر البكسة</th>
+                                                <th>الأجر الإجمالي</th>
+                                                <th>ملاحظات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {daily.map((r, i) => (
+                                                <tr key={i}>
+                                                    <td><strong>{r.worker_name}</strong></td>
+                                                    <td>{r.category_name || 'عام / غير محدد'}</td>
+                                                    <td style={{ color: 'var(--ink-soft)' }}>{r.work_date}</td>
+                                                    <td>{r.boxes_count} بكس</td>
+                                                    <td>{fmt(r.unit_price || r.daily_rate)} د.أ</td>
+                                                    <td><strong>{fmt(r.total_pay)} د.أ</strong></td>
+                                                    <td>{r.notes || '—'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr style={{ background: 'var(--surface-2)', fontWeight: 700 }}>
+                                                <td colSpan={5} style={{ textAlign: 'left', paddingRight: '12px' }}>الإجمالي</td>
+                                                <td colSpan={2}>{fmt(totals.daily_pay)} د.أ</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            )}
+
+                            {/* Hourly Records Table */}
+                            <h2 style={{ fontSize: '15px', margin: '0 0 8px', borderBottom: '2px solid var(--carrot)', paddingBottom: '4px' }}>
+                                2. سجلات عمال الساعة ({hourly.length} سجل)
                             </h2>
                             {hourly.length === 0 ? (
                                 <p style={{ color: 'var(--ink-soft)', fontSize: '13px', marginBottom: '24px' }}>لا توجد سجلات لعمال الساعة في هذه الجلسة.</p>
@@ -179,47 +225,99 @@ function SessionPreviewModal({ session, onClose }) {
                                 </div>
                             )}
 
-                            {/* Daily Records Table */}
-                            <h2 style={{ fontSize: '15px', margin: '0 0 8px', borderBottom: '2px solid var(--carrot)', paddingBottom: '4px' }}>
-                                سجلات عمال الأعداد بالبكس ({daily.length} سجل)
-                            </h2>
-                            {daily.length === 0 ? (
-                                <p style={{ color: 'var(--ink-soft)', fontSize: '13px' }}>لا توجد سجلات لعمال الأعداد في هذه الجلسة.</p>
-                            ) : (
-                                <div className="table-wrapper">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>الاسم</th>
-                                                <th>التاريخ</th>
-                                                <th>عدد البكسات</th>
-                                                <th>أجر البكسة</th>
-                                                <th>الأجر الإجمالي</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {daily.map((r, i) => (
-                                                <tr key={i}>
-                                                    <td><strong>{r.worker_name}</strong></td>
-                                                    <td style={{ color: 'var(--ink-soft)' }}>{r.work_date}</td>
-                                                    <td>{r.boxes_count} بكسة</td>
-                                                    <td>{fmt(r.daily_rate)} د.أ</td>
-                                                    <td><strong>{fmt(r.total_pay)} د.أ</strong></td>
+                            {/* Usage Table */}
+                            {usage.length > 0 && (
+                                <>
+                                    <h2 style={{ fontSize: '15px', margin: '16px 0 8px', borderBottom: '2px solid var(--amber)', paddingBottom: '4px' }}>
+                                        3. سجل استخدام الأصناف والبوكسات ({usage.length} سجل)
+                                    </h2>
+                                    <div className="table-wrapper" style={{ marginBottom: '24px' }}>
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>العامل</th>
+                                                    <th>الصنف</th>
+                                                    <th>الكمية (بكس)</th>
+                                                    <th>الإجمالي (د.أ)</th>
+                                                    <th>التاريخ</th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                        <tfoot>
-                                            <tr style={{ background: 'var(--surface-2)', fontWeight: 700 }}>
-                                                <td colSpan={4} style={{ textAlign: 'left', paddingRight: '12px' }}>الإجمالي</td>
-                                                <td>{fmt(totals.daily_pay)} د.أ</td>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
-                                </div>
+                                            </thead>
+                                            <tbody>
+                                                {usage.map((r, i) => (
+                                                    <tr key={i}>
+                                                        <td><strong>{r.worker_name}</strong></td>
+                                                        <td>{r.category_name || '—'}</td>
+                                                        <td>{r.quantity} بكس</td>
+                                                        <td>{fmt(r.total_price)} د.أ</td>
+                                                        <td>{r.entry_date}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Inspection Table */}
+                            {inspection.length > 0 && (
+                                <>
+                                    <h2 style={{ fontSize: '15px', margin: '16px 0 8px', borderBottom: '2px solid var(--primary)', paddingBottom: '4px' }}>
+                                        4. سجل إنجاز وتخصيم عمال الفحص ({inspection.length} سجل)
+                                    </h2>
+                                    <div className="table-wrapper" style={{ marginBottom: '24px' }}>
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>عامل الفحص</th>
+                                                    <th>العدد (بكس)</th>
+                                                    <th>التاريخ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {inspection.map((r, i) => (
+                                                    <tr key={i}>
+                                                        <td><strong>{r.worker_name}</strong></td>
+                                                        <td>{r.boxes_count} بكس</td>
+                                                        <td>{r.work_date}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Attendance Table */}
+                            {attendance.length > 0 && (
+                                <>
+                                    <h2 style={{ fontSize: '15px', margin: '16px 0 8px', borderBottom: '2px solid var(--grey)', paddingBottom: '4px' }}>
+                                        5. سجل الحضور والغياب ({attendance.length} سجل)
+                                    </h2>
+                                    <div className="table-wrapper" style={{ marginBottom: '24px' }}>
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>اسم العامل</th>
+                                                    <th>الحالة</th>
+                                                    <th>التاريخ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {attendance.map((r, i) => (
+                                                    <tr key={i}>
+                                                        <td><strong>{r.worker_name}</strong></td>
+                                                        <td>{r.status === 'present' ? 'حاضر' : r.status === 'absent' ? 'غائب' : r.status}</td>
+                                                        <td>{r.attendance_date}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
                             )}
 
                             <div className="footer" style={{ marginTop: '24px', textAlign: 'center', fontSize: '11px', color: 'var(--ink-soft)' }}>
-                                مشغل ابو يوسف &copy; — جميع الحقوق محفوظة
+                                جميع الحقوق محفوظة &copy;
                             </div>
                         </div>
                     )}

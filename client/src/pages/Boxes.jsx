@@ -28,6 +28,7 @@ export default function Boxes() {
 
     // Recording form state
     const [workerId, setWorkerId] = useState('');
+    const [recordCatId, setRecordCatId] = useState('');
     const [boxesCount, setBoxesCount] = useState('');
     const [notes, setNotes] = useState('');
     const [editRecordId, setEditRecordId] = useState(null);
@@ -137,7 +138,7 @@ export default function Boxes() {
 
     const load = useCallback(async () => {
         try {
-            const [w, r, c, hw, insp, u, t, iw] = await Promise.all([
+            const results = await Promise.allSettled([
                 api.getDailyWorkers(),
                 api.getDailyWorkRecords(),
                 api.getCategories(),
@@ -147,6 +148,7 @@ export default function Boxes() {
                 api.getInspectionTargets(),
                 api.getInspectionWorkers()
             ]);
+            const [w, r, c, hw, insp, u, t, iw] = results.map(res => res.status === 'fulfilled' ? res.value : []);
             setWorkers(w || []);
             setRecords(r || []);
             setCategories(c || []);
@@ -156,11 +158,13 @@ export default function Boxes() {
             setInspTargets(t || []);
             setInspWorkers(iw || []);
             if (w?.length && !workerId) setWorkerId(String(w[0].id));
+            if (c?.length && !recordCatId) setRecordCatId(String(c[0].id));
             if (c?.length && !useCat) setUseCat(String(c[0].id));
         } catch (e) {
-            toast.error('فشل تحميل البيانات');
+            console.error('Error loading boxes data:', e);
+            toast.error(e.message || 'فشل تحميل البيانات');
         }
-    }, [workerId, useCat]);
+    }, [workerId, useCat, recordCatId]);
 
     useEffect(() => {
         load();
@@ -176,6 +180,8 @@ export default function Boxes() {
         try {
             if (editRecordId) {
                 await api.updateDailyWorkRecord(editRecordId, {
+                    worker_id: parseInt(workerId),
+                    category_id: recordCatId ? parseInt(recordCatId) : null,
                     boxes_count: parseInt(boxesCount),
                     notes: notes
                 });
@@ -184,6 +190,7 @@ export default function Boxes() {
             } else {
                 await api.createDailyWorkRecord({
                     worker_id: parseInt(workerId),
+                    category_id: recordCatId ? parseInt(recordCatId) : null,
                     boxes_count: parseInt(boxesCount),
                     work_date: date,
                     notes: notes
@@ -240,6 +247,7 @@ export default function Boxes() {
     function startEditRecord(rec) {
         setEditRecordId(rec.id);
         setWorkerId(String(rec.worker_id));
+        setRecordCatId(rec.category_id ? String(rec.category_id) : '');
         setBoxesCount(String(rec.boxes_count));
         setNotes(rec.notes || '');
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -448,6 +456,17 @@ export default function Boxes() {
                                         {workers.map(w => (
                                             <option key={w.id} value={w.id}>
                                                 {w.full_name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="field">
+                                    <label>الصنف (نوع المنتج)</label>
+                                    <select value={recordCatId} onChange={e => setRecordCatId(e.target.value)}>
+                                        <option value="">اختر الصنف (بندورة، خيار...)...</option>
+                                        {categories.map(c => (
+                                            <option key={c.id} value={c.id}>
+                                                {c.name} ({fmt(c.unit_price)} د.أ/بكس)
                                             </option>
                                         ))}
                                     </select>
@@ -1040,8 +1059,10 @@ export default function Boxes() {
                                 <thead>
                                     <tr>
                                         <th>العامل</th>
+                                        <th>نوع الصنف</th>
                                         <th>العدد (بكس)</th>
-                                        <th>الأجر اليومي (د.أ)</th>
+                                        <th>سعر البكسة (د.أ)</th>
+                                        <th>الأجر المتوقع (د.أ)</th>
                                         <th>التاريخ</th>
                                         <th>الملاحظات</th>
                                         {isAdmin && <th>الإجراءات</th>}
@@ -1050,7 +1071,7 @@ export default function Boxes() {
                                 <tbody>
                                     {records.length === 0 ? (
                                         <tr className="empty-row">
-                                            <td colSpan={isAdmin ? 6 : 5}>
+                                            <td colSpan={isAdmin ? 8 : 7}>
                                                 <div className="empty-state">
                                                     <div className="empty-text">لا توجد سجلات بعد</div>
                                                 </div>
@@ -1060,13 +1081,26 @@ export default function Boxes() {
                                         const entryDate = r.work_date
                                             ? new Date(r.work_date).toLocaleDateString('ar-EG')
                                             : '';
+                                        const cat = categories.find(c => c.id === r.category_id);
+                                        const catName = r.category_name || cat?.name || 'صنف غير محدد';
+                                        const boxRate = r.unit_price || cat?.unit_price || r.daily_rate || 0;
                                         return (
                                             <tr key={r.id}>
                                                 <td><strong>{r.worker_name}</strong></td>
                                                 <td>
+                                                    <span className={`badge ${badgeClass(cat?.color || 'green')}`}>
+                                                        🌱 {catName}
+                                                    </span>
+                                                </td>
+                                                <td>
                                                     <span className="badge badge-blue">{r.boxes_count}</span>
                                                 </td>
-                                                <td className="total-cell">{fmt(r.total_pay)}</td>
+                                                <td style={{ color: 'var(--ink-soft)' }}>
+                                                    {fmt(boxRate)} د.أ
+                                                </td>
+                                                <td className="total-cell" style={{ color: 'var(--leaf-dark)', fontWeight: 'bold' }}>
+                                                    {fmt(r.total_pay)}
+                                                </td>
                                                 <td style={{ color: 'var(--ink-soft)' }}>{entryDate}</td>
                                                 <td style={{ color: 'var(--ink-soft)', fontSize: '13px' }}>{r.notes || '—'}</td>
                                                 {isAdmin && (
@@ -1087,6 +1121,65 @@ export default function Boxes() {
                                 </tbody>
                             </table>
                         </div>
+
+                        {/* Worker Production Summary Card */}
+                        {records.length > 0 && (() => {
+                            const summaryByWorker = {};
+                            records.forEach(r => {
+                                const wName = r.worker_name || 'غير معروف';
+                                if (!summaryByWorker[wName]) {
+                                    summaryByWorker[wName] = {
+                                        worker_name: wName,
+                                        total_boxes: 0,
+                                        total_pay: 0,
+                                        categories: {}
+                                    };
+                                }
+                                const cat = categories.find(c => c.id === r.category_id);
+                                const cName = r.category_name || cat?.name || 'عام';
+                                summaryByWorker[wName].total_boxes += Number(r.boxes_count || 0);
+                                summaryByWorker[wName].total_pay += Number(r.total_pay || 0);
+                                if (!summaryByWorker[wName].categories[cName]) {
+                                    summaryByWorker[wName].categories[cName] = { boxes: 0, pay: 0 };
+                                }
+                                summaryByWorker[wName].categories[cName].boxes += Number(r.boxes_count || 0);
+                                summaryByWorker[wName].categories[cName].pay += Number(r.total_pay || 0);
+                            });
+
+                            const summaryList = Object.values(summaryByWorker);
+
+                            return (
+                                <div style={{ marginTop: '24px', background: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                    <h4 style={{ margin: '0 0 14px', color: 'var(--primary-dark)', fontSize: '15px', fontWeight: 'bold' }}>
+                                        📊 إجمالي إنتاج وأجور عمال الأعداد لاليوم (حسب الصنف):
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '14px' }}>
+                                        {summaryList.map(item => (
+                                            <div key={item.worker_name} style={{ background: '#fff', padding: '14px', borderRadius: '10px', border: '1px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px dashed #cbd5e1', paddingBottom: '8px' }}>
+                                                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: 'var(--ink)' }}>👤 {item.worker_name}</span>
+                                                    <span style={{ background: 'var(--leaf-xlight)', color: '#166534', padding: '3px 10px', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>
+                                                        {fmt(item.total_pay)} د.أ
+                                                    </span>
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
+                                                    {Object.entries(item.categories).map(([catName, catData]) => (
+                                                        <div key={catName} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink-soft)' }}>
+                                                            <span>• {catName}: <strong style={{ color: 'var(--ink)' }}>{catData.boxes} بكس</strong></span>
+                                                            <span>الجر: <strong style={{ color: '#15803d' }}>{fmt(catData.pay)} د.أ</strong></span>
+                                                        </div>
+                                                    ))}
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginTop: '8px', paddingTop: '6px', borderTop: '1px solid #e2e8f0', color: 'var(--primary-dark)', fontSize: '13.5px' }}>
+                                                        <span>إجمالي البكس: {item.total_boxes} بكس</span>
+                                                        <span>الأجر لليوم: {fmt(item.total_pay)} د.أ</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 </>
             ) : (

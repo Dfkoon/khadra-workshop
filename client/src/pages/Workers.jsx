@@ -58,15 +58,10 @@ export default function Workers() {
 
     const load = useCallback(async () => {
         try {
-            const [w, s, a] = await Promise.all([api.getWorkers(), api.getShifts(), api.getAttendance()]);
-            
-            const today = new Date().toISOString().slice(0, 10);
-            const todayHourly = (a || []).filter(r => r.attendance_date?.slice(0, 10) === today && (r.status === 'hourly' || r.status === 'present')).map(r => r.worker_name);
-            const activeWorkers = (w || []).filter(worker => todayHourly.includes(worker.full_name));
-
-            setWorkers(activeWorkers);
+            const [w, s] = await Promise.all([api.getWorkers(), api.getShifts()]);
+            setWorkers(w || []);
             setShifts(s || []);
-            if (activeWorkers.length && !shiftWid) setShiftWid(String(activeWorkers[0].id));
+            if ((w || []).length && !shiftWid) setShiftWid(String(w[0].id));
         } catch (e) { toast.error('فشل تحميل البيانات'); }
     }, [shiftWid]);
 
@@ -75,9 +70,14 @@ export default function Workers() {
     async function addWorker() {
         if (!wName || !wRate) { toast.error('أدخل اسم العامل وسعر الساعة'); return; }
         try {
-            await api.createWorker(wName, parseFloat(wRate), wNotes);
+            const newWorker = await api.createWorker(wName, parseFloat(wRate), wNotes);
             toast.success('تمت إضافة العامل بنجاح');
             setWName(''); setWRate(''); setWNotes('');
+            setWorkers(prevWorkers => {
+                const nextWorkers = [...prevWorkers, newWorker];
+                if (!shiftWid) setShiftWid(String(newWorker.id));
+                return nextWorkers;
+            });
             load();
         } catch (e) { toast.error(e.message); }
     }

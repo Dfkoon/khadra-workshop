@@ -5,3 +5,7 @@ dist/
 client/dist/
 .DS_Store
 *.log
+khadra.db*
+.env*
+migrate-to-turso.mjs
+

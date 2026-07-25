@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'https://khadra-workshop.onrender.com';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 function getToken() {
   return localStorage.getItem('khadraToken') || '';
@@ -9,12 +9,13 @@ async function request(method, path, body = null, authToken = null) {
   const headers = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+  if (token) headers.Authorization = 'Bearer ' + token;
+
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
 
-  const res  = await fetch(`${API_BASE}${path}`, opts);
+  const res = await fetch(`${API_BASE}${path}`, opts);
   const text = await res.text();
   let data = {};
 
